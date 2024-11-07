@@ -1,0 +1,26 @@
+kind: Checks
+apiVersion: azure.devops.com/v1alpha1
+metadata:
+  name: check-1
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  deletionPolicy: Delete
+  authenticationRefs:
+    basicAuthRef: basicauth-azure
+  api-version: 7.0-preview.1
+  organization: matteogastaldello-org
+  project: teamproject
+  resourceType: environment
+  resourceId: "38"
+  type: 
+    id: 8c6f20a7-a545-4486-9777-f762fafe0d4d
+    name: Approval
+  settings:
+    approvers:
+    - id: 54be8280-9dca-46e6-9422-ffc6a57d0837
+      imageUrl: https://dev.azure.com/matteogastaldello-org/_apis/GraphProfile/MemberAvatars/aad.MzUwMzQwMjYtZjQwZi03ZjQwLWYwZjYtZjQwZjYwZjQwZjQw
+  resource:
+    type: environment
+    id: "38"

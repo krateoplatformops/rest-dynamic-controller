@@ -1,0 +1,22 @@
+kind: PipelinePermission
+apiVersion: azure.devops.com/v1alpha1
+metadata:
+  name: pipelineperm-1
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  authenticationRefs:
+    basicAuthRef: basicauth-azure
+  api-version: 7.0-preview.1
+  organization: matteogastaldello0701
+  project: teamproject
+  resourceType: environment
+  resourceId: "1"
+  pipelines:
+  - id: 42
+    authorized: false
+  # - id: 22
+  #   authorized: false
+  
+    

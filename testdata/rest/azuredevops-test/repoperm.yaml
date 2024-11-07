@@ -1,0 +1,22 @@
+kind: AccessControlEntries
+apiVersion: azure.devops.com/v1alpha1
+metadata:
+  name: repoperm-1
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  deletionPolicy: Delete
+  authenticationRefs:
+    basicAuthRef: basicauth-azure
+  api-version: 7.0-preview.1
+  organization: matteogastaldello0701
+  merge: false
+  securityNamespaceId: 2e9eb7ed-3c0a-47d4-87c1-0ffdd275fd87
+  token: repoV2/60862fa3-989e-4414-a8c9-7e9a138a2e4f/d6a32af7-9953-4a63-9701-46a44fd3dd54
+  accessControlEntries:
+  - descriptor: Microsoft.TeamFoundation.Identity;S-1-9-1551374245-2919908690-2030704203-2760722767-1765116497-1-397549586-221523779-3159594684-3044897150
+    allow: 8
+    deny: 0
+    extendedInfo: {}
+    

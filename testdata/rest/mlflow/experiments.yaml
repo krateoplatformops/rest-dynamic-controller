@@ -1,0 +1,13 @@
+kind: Experiment
+apiVersion: local.mlflow.com/v1alpha1
+metadata:
+  name: exp-krateo
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  deletionPolicy: Delete
+  name: exp-krateo
+  tags:
+  - key: "exp"
+    value: "krateo"

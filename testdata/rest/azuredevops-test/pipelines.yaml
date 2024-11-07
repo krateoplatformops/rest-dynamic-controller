@@ -1,0 +1,27 @@
+kind: Pipeline
+apiVersion: azure.devops.com/v1alpha1
+metadata:
+  name: pipeline-1
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  deletionPolicy: Delete
+  authenticationRefs:
+    basicAuthRef: basicauth-azure
+  # description: created by Krateo
+  api-version: "7.0"
+  organization: matteogastaldello0701
+  folder: test-gen
+  project: teamproject
+  name: pipeline-generated-1
+  configuration:
+    type: yaml
+    path: azure-pipelines.yml
+    repository: 
+      id: 26459a64-89d6-41d4-885b-d2c0133af5a0
+      type: azureReposGit
+      name: repo-generated-2
+  
+
+  

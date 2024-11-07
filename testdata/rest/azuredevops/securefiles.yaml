@@ -1,0 +1,20 @@
+kind: SecureFile
+apiVersion: azure.devops.com/v1alpha1
+metadata:
+  name: secfile-1
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  deletionPolicy: Delete
+  authenticationRefs:
+    basicAuthRef: basicauth-azure
+  # description: created by Krateo
+  api-version: "7.0-preview.1"
+  organization: matteogastaldello-org
+  project: teamproject
+  name: coverage.csv
+  
+  
+
+  

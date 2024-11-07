@@ -1,0 +1,18 @@
+kind: User
+apiVersion: azure.devops.com/v1alpha1
+metadata:
+  name: user-1
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  deletionPolicy: Delete
+  authenticationRefs:
+    basicAuthRef: basicauth-azure
+  api-version: 7.0-preview.1
+  organization: matteogastaldello-org
+  principalName: diego.braga@krateo.io
+  groupDescriptors: vssgp.Uy0xLTktMTU1MTM3NDI0NS0yNTg2MzkzMjQxLTQ2MzQxMTI3OC0zMDg2OTU5NDcxLTI0NTQwMzgyODYtMC0wLTAtMC0x
+
+
+  

@@ -1,0 +1,18 @@
+kind: FeedPermission
+apiVersion: azure.devops.com/v1alpha1
+metadata:
+  name: feedperm-1
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  deletionPolicy: Delete
+  authenticationRefs:
+    basicAuthRef: basicauth-azure
+  api-version: 7.0-preview.1
+  organization: matteogastaldello0701
+  project: teamproject
+  feedId: 8d54dee9-5184-4ea4-9708-35ea77164799
+  items:
+  - role: reader
+    identityDescriptor: Microsoft.TeamFoundation.Identity;S-1-9-1551374245-2919908690-2030704203-2760722767-1765116497-1-397549586-221523779-3159594684-3044897150

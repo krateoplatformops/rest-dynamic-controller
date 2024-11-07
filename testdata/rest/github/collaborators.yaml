@@ -1,0 +1,14 @@
+kind: Collaborators
+apiVersion: gen.github.com/v1alpha1
+metadata:
+  name: gh-collaborator
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  owner: krateoplatformops
+  repo: test-generatore
+  username: matgas
+  permission: "read"
+  authenticationRefs:
+    bearerAuthRef: bearer-gh-ref

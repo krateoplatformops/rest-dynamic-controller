@@ -1,0 +1,36 @@
+kind: VariableGroup
+apiVersion: azure.devops.com/v1alpha1
+metadata:
+  name: vargroup-1
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  deletionPolicy: Delete
+  authenticationRefs:
+    basicAuthRef: basicauth-azure
+  # description: created by Krateo
+  api-version: "7.0-preview.1"
+  organization: matteogastaldello-org
+  project: teamproject
+  name: vargroup-1
+  variables:
+    var1: 
+      isSecret: false
+      value: "Matteo Gastaldello"
+    var2:
+      isSecret: true
+      value: "value2"
+  type: "Vsts"
+  variableGroupProjectReferences:
+  - name: vargroup-1
+    description: This is a variable group
+    projectReference:
+      name: teamproject
+      id: 60862fa3-989e-4414-a8c9-7e9a138a2e4f
+
+
+  
+  
+
+  

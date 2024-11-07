@@ -1,0 +1,23 @@
+kind: TeamProjectReference
+apiVersion: azure.devops.com/v1alpha1
+metadata:
+  name: project-1
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  deletionPolicy: Delete
+  authenticationRefs:
+    basicAuthRef: basicauth-azure
+  # description: created by Krateo
+  api-version: 7.1-preview.4
+  organization: matteogastaldello-org
+  name: Project1
+  description: Lorem ipsum dolor sit amet, consectetur adipiscing elit olè
+  visibility: private
+  capabilities:
+    versioncontrol:
+      sourceControlType: Git
+    processTemplate:
+      templateTypeId: 6b724908-ef14-45cf-84f8-768b5384da45
+  

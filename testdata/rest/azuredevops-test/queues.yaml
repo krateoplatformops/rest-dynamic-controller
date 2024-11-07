@@ -1,0 +1,18 @@
+kind: Queue
+apiVersion: azure.devops.com/v1alpha1
+metadata:
+  name: queue-1
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  deletionPolicy: Delete
+  authenticationRefs:
+    basicAuthRef: basicauth-azure
+  project: teamproject
+  organization: matteogastaldello0701
+  api-version: "7.0"
+  name: queue-1
+  pool:
+    id: 13
+  
