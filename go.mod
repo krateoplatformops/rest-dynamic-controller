@@ -2,8 +2,6 @@ module github.com/krateoplatformops/rest-dynamic-controller
 
 go 1.23.0
 
-toolchain go1.23.2
-
 require (
 	github.com/gobuffalo/flect v1.0.2
 	github.com/krateoplatformops/unstructured-runtime v0.0.5
