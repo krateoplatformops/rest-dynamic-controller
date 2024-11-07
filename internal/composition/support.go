@@ -7,13 +7,13 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/client/restclient"
+	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/client"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/text"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/apiaction"
-	getter "github.com/krateoplatformops/unstructured-runtime/pkg/tools/restclient"
+	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/discovery"
@@ -257,14 +257,14 @@ func compareAny(a any, b any) bool {
 	}
 }
 
-func removeFinalizersAndUpdate(ctx context.Context, log zerolog.Logger, discovery *discovery.DiscoveryClient, dynamic dynamic.Interface, mg *unstructured.Unstructured) error {
+func removeFinalizersAndUpdate(ctx context.Context, log logging.Logger, discovery *discovery.DiscoveryClient, dynamic dynamic.Interface, mg *unstructured.Unstructured) error {
 	mg.SetFinalizers([]string{})
 	err := tools.Update(ctx, mg, tools.UpdateOptions{
 		DiscoveryClient: discovery,
 		DynamicClient:   dynamic,
 	})
 	if err != nil {
-		log.Err(err).Msg("Deleting finalizer")
+		log.Debug("Deleting finalizer", "error", err)
 		return err
 	}
 	return nil
@@ -289,13 +289,13 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 }
 
 // tries to find the resource in the cluster, with the given statusFields and specFields values, if it is able to validate the GET request, returns true
-func isResourceKnown(cli *restclient.UnstructuredClient, log zerolog.Logger, clientInfo *getter.Info, statusFields map[string]interface{}, specFields map[string]interface{}) bool {
+func isResourceKnown(cli *restclient.UnstructuredClient, log logging.Logger, clientInfo *getter.Info, statusFields map[string]interface{}, specFields map[string]interface{}) bool {
 	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Get)
 	if apiCall == nil {
 		return false
 	}
 	if err != nil {
-		log.Err(err).Msg("Building API call")
+		log.Debug("Building API call", "error", err)
 		return false
 	}
 	reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)

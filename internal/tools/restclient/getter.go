@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/gobuffalo/flect"
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/client/restclient"
+	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/client"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/text"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	"github.com/lucasepe/httplib"

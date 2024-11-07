@@ -4,22 +4,24 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/client"
-	helmComposition "github.com/krateoplatformops/rest-dynamic-controller/internal/composition/helmComposition"
-	restComposition "github.com/krateoplatformops/rest-dynamic-controller/internal/composition/restComposition"
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/controller"
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/eventrecorder"
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/shortid"
+	genctrl "github.com/krateoplatformops/unstructured-runtime"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	restComposition "github.com/krateoplatformops/rest-dynamic-controller/internal/composition"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/support"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/tools/helmchart/archive"
-	getter "github.com/krateoplatformops/unstructured-runtime/pkg/tools/restclient"
-	"github.com/rs/zerolog"
+	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
+	memory "k8s.io/client-go/discovery/cached"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -50,10 +52,8 @@ func main() {
 		support.EnvString("COMPOSITION_CONTROLLER_RESOURCE", ""), "resource plural name")
 	namespace := flag.String("namespace",
 		support.EnvString("COMPOSITION_CONTROLLER_NAMESPACE", "default"), "namespace")
-	chart := flag.String("chart",
-		support.EnvString("COMPOSITION_CONTROLLER_CHART", ""), "chart")
-	cliType := flag.String("client",
-		support.EnvString("COMPOSITION_CLIENT_TYPE", string(client.ClientHelm)), "client type [REST|HELM]]")
+	urlplurals := flag.String("urlplurals",
+		support.EnvString("URL_PLURALS", "http://bff.krateo-system.svc.cluster.local:8081/api-info/names"), "url plurals")
 
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
@@ -61,87 +61,55 @@ func main() {
 	}
 
 	flag.Parse()
-	clientType, err := client.ToClientType(*cliType)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-	// Initialize the logger
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
-	// Default level for this log is info, unless debug flag is present
-	zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	if *debug {
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	}
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	zerolog.TimeFieldFormat = time.RFC3339
-
-	zerolog.TimeFieldFormat = time.RFC3339
-	// outLogger := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339, NoColor: true, }
-	log := zerolog.New(os.Stdout).With().
-		Str("service", serviceName).
-		Timestamp().
-		Logger()
+	zl := zap.New(zap.UseDevMode(*debug))
+	log := logging.NewLogrLogger(zl.WithName(serviceName))
 
 	// Kubernetes configuration
 	var cfg *rest.Config
+	var err error
 	if len(*kubeconfig) > 0 {
 		cfg, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
 	} else {
 		cfg, err = rest.InClusterConfig()
 	}
 	if err != nil {
-		log.Fatal().Err(err).Msg("Building kubeconfig.")
+		log.Debug("Building kubeconfig", "error", err)
 	}
 
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Creating dynamic client.")
+		log.Debug("Creating dynamic client.", "error", err)
 	}
 
-	rec, err := eventrecorder.Create(cfg)
+	discovery, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Creating event recorder.")
+		log.Debug("Creating discovery client.", "error", err)
 	}
+
+	cachedDisc := memory.NewMemCacheClient(discovery)
 
 	var handler controller.ExternalClient
-	switch clientType {
-	case client.ClientREST:
-		var swg getter.Getter
-		swg, err = getter.Dynamic(cfg)
-		if err != nil {
-			log.Fatal().Err(err).Msg("Creating chart url info getter.")
-		}
-		handler = restComposition.NewHandler(cfg, &log, swg)
-	case client.ClientHelm:
-		var pig archive.Getter
-		if len(*chart) > 0 {
-			pig = archive.Static(*chart)
-		} else {
-			pig, err = archive.Dynamic(cfg, *debug)
-			if err != nil {
-				log.Fatal().Err(err).Msg("Creating chart url info getter.")
-			}
-		}
-		handler = helmComposition.NewHandler(cfg, &log, pig)
-	}
 
-	log.Info().
-		Str("build", Build).
-		Bool("debug", *debug).
-		Dur("resyncInterval", *resyncInterval).
-		Str("group", *resourceGroup).
-		Str("version", *resourceVersion).
-		Str("resource", *resourceName).
-		Str("clientType", clientType.String()).
-		Msgf("Starting %s.", serviceName)
-
-	sid, err := shortid.New(1, shortid.DefaultABC, 2342)
+	var swg getter.Getter
+	swg, err = getter.Dynamic(cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Creating shortid generator.")
+		log.Debug("Creating chart url info getter.", "error", err)
 	}
-	ctrl := controller.New(sid, controller.Options{
+	handler = restComposition.NewHandler(cfg, log, swg)
+
+	log.WithValues("build", Build).
+		WithValues("debug", *debug).
+		WithValues("resyncInterval", *resyncInterval).
+		WithValues("group", *resourceGroup).
+		WithValues("version", *resourceVersion).
+		WithValues("resource", *resourceName).
+		Info("Starting %s.", serviceName)
+
+	pluralizer := pluralizer.New(urlplurals, http.DefaultClient)
+
+	controller := genctrl.New(genctrl.Options{
+		Discovery:      cachedDisc,
 		Client:         dyn,
 		ResyncInterval: *resyncInterval,
 		GVR: schema.GroupVersionResource{
@@ -149,12 +117,15 @@ func main() {
 			Version:  *resourceVersion,
 			Resource: *resourceName,
 		},
-		Namespace:      *namespace,
-		Recorder:       rec,
-		Logger:         &log,
-		ExternalClient: handler,
+		Namespace:    *namespace,
+		Config:       cfg,
+		Debug:        *debug,
+		Logger:       log,
+		ProviderName: serviceName,
+		ListWatcher:  controller.ListWatcherConfiguration{},
+		Pluralizer:   *pluralizer,
 	})
-	// ctrl.SetExternalClient(handler)
+	controller.SetExternalClient(handler)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), []os.Signal{
 		os.Interrupt,
@@ -166,8 +137,8 @@ func main() {
 	}...)
 	defer cancel()
 
-	err = ctrl.Run(ctx, *workers)
+	err = controller.Run(ctx, *workers)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Running controller.")
+		log.Debug("Running controller.", "error", err)
 	}
 }
