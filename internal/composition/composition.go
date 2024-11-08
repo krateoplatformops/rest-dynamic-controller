@@ -9,15 +9,14 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/gobuffalo/flect"
-	"github.com/krateoplatformops/rest-dynamic-controller/interal/tools/apiaction"
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/client/restclient"
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/controller"
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/meta"
-	getter "github.com/krateoplatformops/unstructured-runtime/pkg/tools/restclient"
+	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/client"
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/apiaction"
+	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured/condition"
 	"github.com/lucasepe/httplib"
-
-	"github.com/rs/zerolog"
 
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
@@ -30,15 +29,15 @@ import (
 
 var _ controller.ExternalClient = (*handler)(nil)
 
-func NewHandler(cfg *rest.Config, log *zerolog.Logger, swg getter.Getter) controller.ExternalClient {
+func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter) controller.ExternalClient {
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Creating dynamic client.")
+		log.Debug("Creating dynamic client", "error", err)
 	}
 
 	dis, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Creating discovery client.")
+		log.Debug("Creating discovery client", "error", err)
 	}
 
 	return &handler{
@@ -50,30 +49,30 @@ func NewHandler(cfg *rest.Config, log *zerolog.Logger, swg getter.Getter) contro
 }
 
 type handler struct {
-	logger            *zerolog.Logger
+	logger            logging.Logger
 	dynamicClient     dynamic.Interface
 	discoveryClient   *discovery.DiscoveryClient
 	swaggerInfoGetter getter.Getter
 }
 
-func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (bool, error) {
-	log := h.logger.With().Timestamp().
-		Str("op", "Observe").
-		Str("apiVersion", mg.GetAPIVersion()).
-		Str("kind", mg.GetKind()).
-		Str("name", mg.GetName()).
-		Str("namespace", mg.GetNamespace()).Logger()
+func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (controller.ExternalObservation, error) {
+	log := h.logger.WithValues("op", "Observe").
+		WithValues("apiVersion", mg.GetAPIVersion()).
+		WithValues("kind", mg.GetKind()).
+		WithValues("name", mg.GetName()).
+		WithValues("namespace", mg.GetNamespace())
 
 	if h.swaggerInfoGetter == nil {
-		return false, fmt.Errorf("swagger file info getter must be specified")
+		return controller.ExternalObservation{}, fmt.Errorf("swagger file info getter must be specified")
 	}
 	clientInfo, err := h.swaggerInfoGetter.Get(mg)
 	if err != nil {
-		log.Err(err).Msg("Getting REST client info")
-		return false, err
+		log.Debug("Getting REST client info", "error", err)
+		return controller.ExternalObservation{}, err
 	}
 	if clientInfo == nil {
-		return false, fmt.Errorf("swagger info is nil")
+		log.Debug("Swagger info is nil")
+		return controller.ExternalObservation{}, fmt.Errorf("swagger info is nil")
 	}
 	tools.Update(ctx, mg, tools.UpdateOptions{
 		DiscoveryClient: h.discoveryClient,
@@ -82,8 +81,8 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 
 	cli, err := restclient.BuildClient(clientInfo.URL)
 	if err != nil {
-		log.Err(err).Msg("Building REST client")
-		return false, err
+		log.Debug("Building REST client", "error", err)
+		return controller.ExternalObservation{}, err
 	}
 	cli.Auth = clientInfo.Auth
 	cli.Verbose = meta.IsVerbose(mg)
@@ -91,12 +90,12 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 	cli.SpecFields = mg
 	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 	if err != nil {
-		log.Err(err).Msg("Getting spec")
-		return false, err
+		log.Debug("Getting spec", "error", err)
+		return controller.ExternalObservation{}, err
 	}
 	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
 	if err != nil {
-		log.Warn().AnErr("Getting status", err)
+		log.Debug("Error getting status.", "error", err)
 	}
 	var body *map[string]interface{}
 	isKnown := isResourceKnown(cli, log, clientInfo, statusFields, specFields)
@@ -105,71 +104,78 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		// Getting the external resource by its identifier
 		apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Get)
 		if apiCall == nil {
-			log.Warn().Msgf("API call not found for %s", apiaction.Get)
-			return true, nil
+			log.Debug("API call not found", "action", apiaction.Get)
+			return controller.ExternalObservation{}, fmt.Errorf("API call not found for %s", apiaction.Get)
 		}
 		if err != nil {
-			log.Err(err).Msg("Building API call")
-			return false, err
+			log.Debug("Building API call", "error", err)
+			return controller.ExternalObservation{}, err
 		}
 		reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)
 		if reqConfiguration == nil {
-			return false, fmt.Errorf("error building call configuration")
+			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
 		body, err = apiCall(ctx, http.DefaultClient, callInfo.Path, reqConfiguration)
 		if httplib.IsNotFoundError(err) {
-			log.Debug().Str("Resource", mg.GetKind()).Msg("External resource not found.")
-			return false, nil
+			log.Debug("External resource not found", "kind", mg.GetKind())
+			return controller.ExternalObservation{
+				ResourceExists:   false,
+				ResourceUpToDate: false,
+			}, nil
 		}
 		if err != nil {
-			log.Err(err).Msg("Performing REST call")
-			return false, err
+			log.Debug("Performing REST call", "error", err)
+			return controller.ExternalObservation{}, err
 		}
 	} else {
 		apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.FindBy)
 		if apiCall == nil {
 			if !unstructuredtools.IsConditionSet(mg, condition.Creating()) && !unstructuredtools.IsConditionSet(mg, condition.Available()) {
-				log.Debug().Str("Resource", mg.GetKind()).Msg("External resource is being created.")
-				return false, nil
+				log.Debug("External resource is being created", "kind", mg.GetKind())
+				return controller.ExternalObservation{}, nil
 			}
-			log.Warn().Msgf("API call not found for %s", apiaction.FindBy)
-			log.Warn().Msgf("Resource is assumed to be up-to-date.")
+			log.Debug("API call not found", "action", apiaction.FindBy)
+			log.Debug("Resource is assumed to be up-to-date.")
 			cond := condition.Available()
 			cond.Message = "Resource is assumed to be up-to-date. API call not found for FindBy."
 			err = unstructuredtools.SetCondition(mg, cond)
 			if err != nil {
-				log.Err(err).Msg("Setting condition")
-				return false, err
+				log.Debug("Setting condition", "error", err)
+				return controller.ExternalObservation{}, err
 			}
-			return true, tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-				DiscoveryClient: h.discoveryClient,
-				DynamicClient:   h.dynamicClient,
-			})
+			return controller.ExternalObservation{
+					ResourceExists:   true,
+					ResourceUpToDate: true,
+				}, tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+					DiscoveryClient: h.discoveryClient,
+					DynamicClient:   h.dynamicClient,
+				})
 		}
 		if err != nil {
-			log.Err(err).Msg("Building API call")
-			return false, err
+			log.Debug("Building API call", "error", err)
+			return controller.ExternalObservation{}, err
 		}
 		reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)
 		if reqConfiguration == nil {
-			return false, fmt.Errorf("error building call configuration")
+			log.Debug("Building call configuration", "error", "error building call configuration")
+			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
 		body, err = apiCall(ctx, http.DefaultClient, callInfo.Path, reqConfiguration)
 		if httplib.IsNotFoundError(err) {
-			log.Debug().Str("Resource", mg.GetKind()).Msg("External resource not found.")
-			return false, nil
+			log.Debug("External resource not found", "kind", mg.GetKind())
+			return controller.ExternalObservation{}, nil
 		}
 		if err != nil {
-			log.Err(err).Msg("Performing REST call")
-			return false, err
+			log.Debug("Performing REST call", "error", err)
+			return controller.ExternalObservation{}, err
 		}
 	}
 
 	if body != nil {
 		err = populateStatusFields(clientInfo, mg, body)
 		if err != nil {
-			log.Err(err).Msg("Updating identifiers")
-			return false, err
+			log.Debug("Updating identifiers", "error", err)
+			return controller.ExternalObservation{}, err
 		}
 
 		err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
@@ -177,49 +183,54 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 			DynamicClient:   h.dynamicClient,
 		})
 		if err != nil {
-			log.Err(err).Msg("Updating status")
-			return false, err
+			log.Debug("Updating status", "error", err)
+			return controller.ExternalObservation{}, err
 		}
 		ok, err := isCRUpdated(mg, *body)
 		if err != nil {
-			log.Err(err).Msg("Checking if CR is updated")
-			return false, err
+			log.Debug("Checking if CR is updated", "error", err)
+			return controller.ExternalObservation{}, err
 		}
 		if !ok {
-			log.Debug().Str("Resource", mg.GetKind()).Msg("External resource not up-to-date.")
-			return true, apierrors.NewNotFound(schema.GroupResource{
-				Group:    mg.GroupVersionKind().Group,
-				Resource: flect.Pluralize(strings.ToLower(mg.GetKind())),
-			}, mg.GetName())
+			log.Debug("External resource not up-to-date", "kind", mg.GetKind())
+			return controller.ExternalObservation{
+					ResourceExists:   true,
+					ResourceUpToDate: false,
+				}, apierrors.NewNotFound(schema.GroupResource{
+					Group:    mg.GroupVersionKind().Group,
+					Resource: flect.Pluralize(strings.ToLower(mg.GetKind())),
+				}, mg.GetName())
 		}
 	}
-	log.Debug().Str("Resource", mg.GetKind()).Msg("Setting condition.")
+	log.Debug("Setting condition", "kind", mg.GetKind())
 	err = unstructuredtools.SetCondition(mg, condition.Available())
 	if err != nil {
-		log.Err(err).Msg("Setting condition")
-		return false, err
+		log.Debug("Setting condition", "error", err)
+		return controller.ExternalObservation{}, err
 	}
 	err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 		DiscoveryClient: h.discoveryClient,
 		DynamicClient:   h.dynamicClient,
 	})
 	if err != nil {
-		log.Err(err).Msg("Updating status")
-		return false, err
+		log.Debug("Updating status", "error", err)
+		return controller.ExternalObservation{}, err
 	}
 
-	log.Debug().Str("Resource", mg.GetKind()).Msg("External resource up-to-date.")
+	log.Debug("External resource up-to-date", "kind", mg.GetKind())
 
-	return true, nil
+	return controller.ExternalObservation{
+		ResourceExists:   true,
+		ResourceUpToDate: true,
+	}, nil
 }
 
 func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) error {
-	log := h.logger.With().Timestamp().
-		Str("op", "Create").
-		Str("apiVersion", mg.GetAPIVersion()).
-		Str("kind", mg.GetKind()).
-		Str("name", mg.GetName()).
-		Str("namespace", mg.GetNamespace()).Logger()
+	log := h.logger.WithValues("op", "Create").
+		WithValues("apiVersion", mg.GetAPIVersion()).
+		WithValues("kind", mg.GetKind()).
+		WithValues("name", mg.GetName()).
+		WithValues("namespace", mg.GetNamespace())
 
 	if h.swaggerInfoGetter == nil {
 		return fmt.Errorf("swagger info getter must be specified")
@@ -227,13 +238,13 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	clientInfo, err := h.swaggerInfoGetter.Get(mg)
 	if err != nil {
-		log.Err(err).Msg("Getting REST client info")
+		log.Debug("Getting REST client info", "error", err)
 		return err
 	}
 
 	cli, err := restclient.BuildClient(clientInfo.URL)
 	if err != nil {
-		log.Err(err).Msg("Building REST client")
+		log.Debug("Building REST client", "error", err)
 		return err
 	}
 	cli.Auth = clientInfo.Auth
@@ -241,32 +252,32 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 	if err != nil {
-		log.Err(err).Msg("Getting spec")
+		log.Debug("Getting spec", "error", err)
 		return err
 	}
 	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Create)
 	if err != nil {
-		log.Err(err).Msg("Building API call")
+		log.Debug("Building API call", "error", err)
 		return err
 	}
 	reqConfiguration := BuildCallConfig(callInfo, nil, specFields)
 	body, err := apiCall(ctx, http.DefaultClient, callInfo.Path, reqConfiguration)
 	if err != nil {
-		log.Err(err).Msg("Performing REST call")
+		log.Debug("Performing REST call", "error", err)
 		return err
 	}
 
-	log.Debug().Str("Resource", mg.GetKind()).Msg("Creating external resource.")
+	log.Debug("Creating external resource", "kind", mg.GetKind())
 
 	err = unstructuredtools.SetCondition(mg, condition.Creating())
 	if err != nil {
-		log.Err(err).Msg("Setting condition")
+		log.Debug("Setting condition", "error", err)
 		return err
 	}
 
 	err = populateStatusFields(clientInfo, mg, body)
 	if err != nil {
-		log.Err(err).Msg("Updating identifiers")
+		log.Debug("Updating identifiers", "error", err)
 		return err
 	}
 
@@ -275,7 +286,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		DynamicClient:   h.dynamicClient,
 	})
 	if err != nil {
-		log.Err(err).Msg("Updating status")
+		log.Debug("Updating status", "error", err)
 		return err
 	}
 
@@ -283,27 +294,26 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 }
 
 func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) error {
-	log := h.logger.With().
-		Str("op", "Update").
-		Str("apiVersion", mg.GetAPIVersion()).
-		Str("kind", mg.GetKind()).
-		Str("name", mg.GetName()).
-		Str("namespace", mg.GetNamespace()).Logger()
+	log := h.logger.WithValues("op", "Update").
+		WithValues("apiVersion", mg.GetAPIVersion()).
+		WithValues("kind", mg.GetKind()).
+		WithValues("name", mg.GetName()).
+		WithValues("namespace", mg.GetNamespace())
 
-	log.Debug().Msg("Handling composition values update.")
+	log.Debug("Handling composition values update.")
 	if h.swaggerInfoGetter == nil {
 		return fmt.Errorf("swagger info getter must be specified")
 	}
 
 	clientInfo, err := h.swaggerInfoGetter.Get(mg)
 	if err != nil {
-		log.Err(err).Msg("Getting REST client info")
+		log.Debug("Getting REST client info", "error", err)
 		return err
 	}
 
 	cli, err := restclient.BuildClient(clientInfo.URL)
 	if err != nil {
-		log.Err(err).Msg("Building REST client")
+		log.Debug("Building REST client", "error", err)
 		return err
 	}
 	cli.Auth = clientInfo.Auth
@@ -311,38 +321,38 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 
 	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 	if err != nil {
-		log.Err(err).Msg("Getting spec")
+		log.Debug("Getting spec", "error", err)
 		return err
 	}
 	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Update)
 	if err != nil {
-		log.Err(err).Msg("Building API call")
+		log.Debug("Building API call", "error", err)
 		return err
 	}
 
 	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
 	if err == fmt.Errorf("%s not found", "status") {
-		log.Debug().Str("Resource", mg.GetKind()).Msg("External resource not created yet.")
+		log.Debug("External resource not created yet", "kind", mg.GetKind())
 		return err
 	}
 	reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)
 	body, err := apiCall(ctx, http.DefaultClient, callInfo.Path, reqConfiguration)
 	if err != nil {
-		log.Err(err).Msg("Performing REST call")
+		log.Debug("Performing REST call", "error", err)
 		return err
 	}
 
 	err = populateStatusFields(clientInfo, mg, body)
 	if err != nil {
-		log.Err(err).Msg("Updating identifiers")
+		log.Debug("Updating identifiers", "error", err)
 		return err
 	}
 
-	log.Debug().Str("Resource", mg.GetKind()).Msg("Creating external resource.")
+	log.Debug("Creating external resource", "kind", mg.GetKind())
 
 	err = unstructuredtools.SetCondition(mg, condition.Creating())
 	if err != nil {
-		log.Err(err).Msg("Setting condition")
+		log.Debug("Setting condition", "error", err)
 		return err
 	}
 
@@ -351,7 +361,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		DynamicClient:   h.dynamicClient,
 	})
 	if err != nil {
-		log.Err(err).Msg("Updating status")
+		log.Debug("Updating status", "error", err)
 		return err
 	}
 
@@ -360,24 +370,23 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		DynamicClient:   h.dynamicClient,
 	})
 	if err != nil {
-		log.Err(err).Msg("Updating status")
+		log.Debug("Updating status", "error", err)
 		return err
 	}
-	log.Debug().Str("kind", mg.GetKind()).Msg("Composition values updated.")
+	log.Debug("Composition values updated", "kind", mg.GetKind())
 
 	return nil
 
 }
 
 func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) error {
-	log := h.logger.With().
-		Str("op", "Delete").
-		Str("apiVersion", mg.GetAPIVersion()).
-		Str("kind", mg.GetKind()).
-		Str("name", mg.GetName()).
-		Str("namespace", mg.GetNamespace()).Logger()
+	log := h.logger.WithValues("op", "Delete").
+		WithValues("apiVersion", mg.GetAPIVersion()).
+		WithValues("kind", mg.GetKind()).
+		WithValues("name", mg.GetName()).
+		WithValues("namespace", mg.GetNamespace())
 
-	log.Debug().Msg("Handling composition values deletion.")
+	log.Debug("Handling composition values deletion.")
 
 	if h.swaggerInfoGetter == nil {
 		return fmt.Errorf("swagger info getter must be specified")
@@ -385,13 +394,13 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 
 	clientInfo, err := h.swaggerInfoGetter.Get(mg)
 	if err != nil {
-		log.Err(err).Msg("Getting REST client info")
+		log.Debug("Getting REST client info", "error", err)
 		return err
 	}
 
 	cli, err := restclient.BuildClient(clientInfo.URL)
 	if err != nil {
-		log.Err(err).Msg("Building REST client")
+		log.Debug("Building REST client", "error", err)
 		return err
 	}
 	cli.Auth = clientInfo.Auth
@@ -399,21 +408,21 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 
 	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 	if err != nil {
-		log.Err(err).Msg("Getting spec")
+		log.Debug("Getting spec", "error", err)
 		return err
 	}
 	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
 	if err != nil {
-		log.Err(err).Msg("Getting status")
+		log.Debug("Getting status", "error", err)
 		return err
 	}
 	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Delete)
 	if apiCall == nil {
-		log.Warn().Msgf("API call not found for %s", apiaction.Delete)
+		log.Debug("API call not found", "action", apiaction.Delete)
 		return removeFinalizersAndUpdate(ctx, log, h.discoveryClient, h.dynamicClient, mg)
 	}
 	if err != nil {
-		log.Err(err).Msg("Building API call")
+		log.Debug("Building API call", "error", err)
 		return err
 	}
 	reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)
@@ -423,15 +432,15 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 
 	_, err = apiCall(ctx, http.DefaultClient, callInfo.Path, reqConfiguration)
 	if err != nil {
-		log.Err(err).Msg("Performing REST call")
+		log.Debug("Performing REST call", "error", err)
 		return err
 	}
 
-	log.Debug().Str("Resource", mg.GetKind()).Msg("Deleting external resource.")
+	log.Debug("Setting condition", "kind", mg.GetKind())
 
 	err = unstructuredtools.SetCondition(mg, condition.Deleting())
 	if err != nil {
-		log.Err(err).Msg("Setting condition")
+		log.Debug("Setting condition", "error", err)
 		return err
 	}
 

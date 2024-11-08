@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	fgetter "github.com/hashicorp/go-getter"
 	stringset "github.com/krateoplatformops/rest-dynamic-controller/internal/text"
+	fgetter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/filegetter"
 	"github.com/pb33f/libopenapi"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
@@ -248,7 +248,7 @@ func BuildClient(swaggerPath string) (*UnstructuredClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create directory: %w", err)
 	}
-	err = fgetter.GetFile(filepath.Join(basePath, filepath.Base(swaggerPath)), swaggerPath)
+	err = fgetter.GetFile(filepath.Join(basePath, filepath.Base(swaggerPath)), swaggerPath, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download file: %w", err)
 	}
