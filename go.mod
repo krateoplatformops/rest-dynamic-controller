@@ -8,7 +8,6 @@ require (
 	github.com/lucasepe/httplib v0.2.2
 	github.com/pb33f/libopenapi v0.16.8
 	github.com/rs/zerolog v1.32.0
-	github.com/stretchr/testify v1.9.0
 	k8s.io/apimachinery v0.31.1
 	k8s.io/client-go v0.31.1
 	sigs.k8s.io/controller-runtime v0.19.1
@@ -42,7 +41,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/twmb/murmur3 v1.1.8 // indirect
 	github.com/vmware-labs/yaml-jsonpath v0.3.2 // indirect

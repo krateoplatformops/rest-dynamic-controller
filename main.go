@@ -96,7 +96,6 @@ func main() {
 	if err != nil {
 		log.Debug("Creating chart url info getter.", "error", err)
 	}
-	handler = restComposition.NewHandler(cfg, log, swg)
 
 	log.WithValues("build", Build).
 		WithValues("debug", *debug).
@@ -104,9 +103,11 @@ func main() {
 		WithValues("group", *resourceGroup).
 		WithValues("version", *resourceVersion).
 		WithValues("resource", *resourceName).
-		Info("Starting %s.", serviceName)
+		Info("Starting.", "serviceName", serviceName)
 
 	pluralizer := pluralizer.New(urlplurals, http.DefaultClient)
+
+	handler = restComposition.NewHandler(cfg, log, swg, *pluralizer)
 
 	controller := genctrl.New(genctrl.Options{
 		Discovery:      cachedDisc,

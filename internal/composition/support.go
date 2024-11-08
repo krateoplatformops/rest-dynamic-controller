@@ -9,14 +9,14 @@ import (
 
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/client"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/text"
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/apiaction"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	"github.com/rs/zerolog/log"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 )
 
@@ -257,11 +257,11 @@ func compareAny(a any, b any) bool {
 	}
 }
 
-func removeFinalizersAndUpdate(ctx context.Context, log logging.Logger, discovery *discovery.DiscoveryClient, dynamic dynamic.Interface, mg *unstructured.Unstructured) error {
+func removeFinalizersAndUpdate(ctx context.Context, log logging.Logger, pluralizer pluralizer.Pluralizer, dynamic dynamic.Interface, mg *unstructured.Unstructured) error {
 	mg.SetFinalizers([]string{})
-	err := tools.Update(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: discovery,
-		DynamicClient:   dynamic,
+	_, err := tools.Update(ctx, mg, tools.UpdateOptions{
+		Pluralizer:    pluralizer,
+		DynamicClient: dynamic,
 	})
 	if err != nil {
 		log.Debug("Deleting finalizer", "error", err)
