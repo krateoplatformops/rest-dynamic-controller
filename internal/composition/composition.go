@@ -15,10 +15,11 @@ import (
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured/condition"
 	"github.com/lucasepe/httplib"
 
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -29,7 +30,7 @@ import (
 
 var _ controller.ExternalClient = (*handler)(nil)
 
-func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter) controller.ExternalClient {
+func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter, pluralizer pluralizer.Pluralizer) controller.ExternalClient {
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		log.Debug("Creating dynamic client", "error", err)
@@ -41,6 +42,7 @@ func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter) control
 	}
 
 	return &handler{
+		pluralizer:        pluralizer,
 		logger:            log,
 		dynamicClient:     dyn,
 		discoveryClient:   dis,
@@ -49,6 +51,7 @@ func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter) control
 }
 
 type handler struct {
+	pluralizer        pluralizer.Pluralizer
 	logger            logging.Logger
 	dynamicClient     dynamic.Interface
 	discoveryClient   *discovery.DiscoveryClient
@@ -74,10 +77,14 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		log.Debug("Swagger info is nil")
 		return controller.ExternalObservation{}, fmt.Errorf("swagger info is nil")
 	}
-	tools.Update(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: h.discoveryClient,
-		DynamicClient:   h.dynamicClient,
+	mg, err = tools.Update(ctx, mg, tools.UpdateOptions{
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
 	})
+	if err != nil {
+		log.Debug("Updating CR", "error", err)
+		return controller.ExternalObservation{}, err
+	}
 
 	cli, err := restclient.BuildClient(clientInfo.URL)
 	if err != nil {
@@ -143,13 +150,16 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 				log.Debug("Setting condition", "error", err)
 				return controller.ExternalObservation{}, err
 			}
+
+			_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+				Pluralizer:    h.pluralizer,
+				DynamicClient: h.dynamicClient,
+			})
+
 			return controller.ExternalObservation{
-					ResourceExists:   true,
-					ResourceUpToDate: true,
-				}, tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-					DiscoveryClient: h.discoveryClient,
-					DynamicClient:   h.dynamicClient,
-				})
+				ResourceExists:   true,
+				ResourceUpToDate: true,
+			}, err
 		}
 		if err != nil {
 			log.Debug("Building API call", "error", err)
@@ -178,9 +188,9 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			return controller.ExternalObservation{}, err
 		}
 
-		err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-			DiscoveryClient: h.discoveryClient,
-			DynamicClient:   h.dynamicClient,
+		mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+			Pluralizer:    h.pluralizer,
+			DynamicClient: h.dynamicClient,
 		})
 		if err != nil {
 			log.Debug("Updating status", "error", err)
@@ -208,9 +218,9 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		log.Debug("Setting condition", "error", err)
 		return controller.ExternalObservation{}, err
 	}
-	err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: h.discoveryClient,
-		DynamicClient:   h.dynamicClient,
+	mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
 		log.Debug("Updating status", "error", err)
@@ -281,9 +291,10 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: h.discoveryClient,
-		DynamicClient:   h.dynamicClient,
+	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
 		log.Debug("Updating status", "error", err)
@@ -356,18 +367,18 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: h.discoveryClient,
-		DynamicClient:   h.dynamicClient,
+	mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
 		log.Debug("Updating status", "error", err)
 		return err
 	}
 
-	err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: h.discoveryClient,
-		DynamicClient:   h.dynamicClient,
+	mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
 		log.Debug("Updating status", "error", err)
@@ -419,7 +430,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Delete)
 	if apiCall == nil {
 		log.Debug("API call not found", "action", apiaction.Delete)
-		return removeFinalizersAndUpdate(ctx, log, h.discoveryClient, h.dynamicClient, mg)
+		return removeFinalizersAndUpdate(ctx, log, h.pluralizer, h.dynamicClient, mg)
 	}
 	if err != nil {
 		log.Debug("Building API call", "error", err)
@@ -444,5 +455,5 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	return removeFinalizersAndUpdate(ctx, log, h.discoveryClient, h.dynamicClient, mg)
+	return removeFinalizersAndUpdate(ctx, log, h.pluralizer, h.dynamicClient, mg)
 }
