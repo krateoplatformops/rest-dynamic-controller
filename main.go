@@ -14,7 +14,7 @@ import (
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	restComposition "github.com/krateoplatformops/rest-dynamic-controller/internal/composition"
+	restResources "github.com/krateoplatformops/rest-dynamic-controller/internal/restResources"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/support"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	serviceName = "composition-dynamic-controller"
+	serviceName = "rest-dynamic-controller"
 )
 
 var (
@@ -40,18 +40,18 @@ func main() {
 	kubeconfig := flag.String("kubeconfig", support.EnvString("KUBECONFIG", ""),
 		"absolute path to the kubeconfig file")
 	debug := flag.Bool("debug",
-		support.EnvBool("COMPOSITION_CONTROLLER_DEBUG", false), "dump verbose output")
-	workers := flag.Int("workers", support.EnvInt("COMPOSITION_CONTROLLER_WORKERS", 1), "number of workers")
+		support.EnvBool("REST_CONTROLLER_DEBUG", false), "dump verbose output")
+	workers := flag.Int("workers", support.EnvInt("REST_CONTROLLER_WORKERS", 1), "number of workers")
 	resyncInterval := flag.Duration("resync-interval",
-		support.EnvDuration("COMPOSITION_CONTROLLER_RESYNC_INTERVAL", time.Minute*1), "resync interval")
+		support.EnvDuration("REST_CONTROLLER_RESYNC_INTERVAL", time.Minute*1), "resync interval")
 	resourceGroup := flag.String("group",
-		support.EnvString("COMPOSITION_CONTROLLER_GROUP", ""), "resource api group")
+		support.EnvString("REST_CONTROLLER_GROUP", ""), "resource api group")
 	resourceVersion := flag.String("version",
-		support.EnvString("COMPOSITION_CONTROLLER_VERSION", ""), "resource api version")
+		support.EnvString("REST_CONTROLLER_VERSION", ""), "resource api version")
 	resourceName := flag.String("resource",
-		support.EnvString("COMPOSITION_CONTROLLER_RESOURCE", ""), "resource plural name")
+		support.EnvString("REST_CONTROLLER_RESOURCE", ""), "resource plural name")
 	namespace := flag.String("namespace",
-		support.EnvString("COMPOSITION_CONTROLLER_NAMESPACE", "default"), "namespace")
+		support.EnvString("REST_CONTROLLER_NAMESPACE", "default"), "namespace")
 	urlplurals := flag.String("urlplurals",
 		support.EnvString("URL_PLURALS", "http://bff.krateo-system.svc.cluster.local:8081/api-info/names"), "url plurals")
 
@@ -107,7 +107,7 @@ func main() {
 
 	pluralizer := pluralizer.New(urlplurals, http.DefaultClient)
 
-	handler = restComposition.NewHandler(cfg, log, swg, *pluralizer)
+	handler = restResources.NewHandler(cfg, log, swg, *pluralizer)
 
 	controller := genctrl.New(genctrl.Options{
 		Discovery:      cachedDisc,

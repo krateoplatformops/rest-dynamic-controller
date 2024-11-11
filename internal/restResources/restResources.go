@@ -1,4 +1,4 @@
-package composition
+package restResources
 
 import (
 	"context"
@@ -311,7 +311,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		WithValues("name", mg.GetName()).
 		WithValues("namespace", mg.GetNamespace())
 
-	log.Debug("Handling composition values update.")
+	log.Debug("Handling custom resource values update.")
 	if h.swaggerInfoGetter == nil {
 		return fmt.Errorf("swagger info getter must be specified")
 	}
@@ -384,7 +384,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("Updating status", "error", err)
 		return err
 	}
-	log.Debug("Composition values updated", "kind", mg.GetKind())
+	log.Debug("Custom resource  values updated", "kind", mg.GetKind())
 
 	return nil
 
@@ -397,7 +397,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		WithValues("name", mg.GetName()).
 		WithValues("namespace", mg.GetNamespace())
 
-	log.Debug("Handling composition values deletion.")
+	log.Debug("Handling custom resource values deletion.")
 
 	if h.swaggerInfoGetter == nil {
 		return fmt.Errorf("swagger info getter must be specified")
