@@ -240,20 +240,6 @@ func (g *dynamicGetter) getAuth(un *unstructured.Unstructured) (httplib.AuthMeth
 		}
 	}
 
-	// authRef, ok, err = unstructured.NestedString(un.Object, "spec", "basicAuthRef")
-	// if err != nil {
-	// 	return nil, fmt.Errorf()
-	// }
-	// if !ok {
-	// 	authRef, ok, err = unstructured.NestedString(un.Object, "spec", "bearerAuthRef")
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	if !ok {
-	// 		return nil, fmt.Errorf("missing spec.basicAuthRef or spec.bearerAuthRef in definition for '%v' in namespace: %s", gvr, un.GetNamespace())
-	// 	}
-	// 	authType = restclient.AuthTypeBearer
-	// }
 	gvrForAuthentication := schema.GroupVersionResource{
 		Group:    gvr.Group,
 		Version:  "v1alpha1",
