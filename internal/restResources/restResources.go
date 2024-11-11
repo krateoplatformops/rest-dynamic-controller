@@ -1,4 +1,4 @@
-package composition
+package restResources
 
 import (
 	"context"

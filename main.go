@@ -14,7 +14,7 @@ import (
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	restComposition "github.com/krateoplatformops/rest-dynamic-controller/internal/composition"
+	restResources "github.com/krateoplatformops/rest-dynamic-controller/internal/restResources"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/support"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
@@ -107,7 +107,7 @@ func main() {
 
 	pluralizer := pluralizer.New(urlplurals, http.DefaultClient)
 
-	handler = restComposition.NewHandler(cfg, log, swg, *pluralizer)
+	handler = restResources.NewHandler(cfg, log, swg, *pluralizer)
 
 	controller := genctrl.New(genctrl.Options{
 		Discovery:      cachedDisc,
