@@ -130,17 +130,33 @@ func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfigu
 }
 
 // isCRUpdated checks if the CR was updated by comparing the fields in the CR with the response from the API call, if existing cr fields are different from the response, it returns false
-func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (bool, error) {
+func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (ComparisonResult, error) {
 	m, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 	if err != nil {
-		return false, fmt.Errorf("error getting spec fields: %w", err)
+		return ComparisonResult{
+			IsEqual: false,
+			Reason: &Reason{
+				Reason: "error getting spec fields",
+			},
+		}, fmt.Errorf("error getting spec fields: %w", err)
 	}
 
 	return compareExisting(m, rm)
 }
 
+type Reason struct {
+	Reason      string
+	FirstValue  any
+	SecondValue any
+}
+
+type ComparisonResult struct {
+	IsEqual bool
+	Reason  *Reason
+}
+
 // compareExisting recursively compares fields between two maps and logs differences.
-func compareExisting(mg map[string]interface{}, rm map[string]interface{}, path ...string) (bool, error) {
+func compareExisting(mg map[string]interface{}, rm map[string]interface{}, path ...string) (ComparisonResult, error) {
 	for key, value := range mg {
 		currentPath := append(path, key)
 		pathStr := fmt.Sprintf("%v", currentPath)
@@ -150,81 +166,179 @@ func compareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 			continue
 		}
 
-		fmt.Println("Comparing", pathStr, value, rmValue)
+		// fmt.Println("Comparing", pathStr, value, rmValue)
 
 		if reflect.TypeOf(value).Kind() != reflect.TypeOf(rmValue).Kind() {
-			return false, fmt.Errorf("types differ at %s - %s is different from %s", pathStr, reflect.TypeOf(value).Kind(), reflect.TypeOf(rmValue).Kind())
+			return ComparisonResult{
+				IsEqual: false,
+				Reason: &Reason{
+					Reason:      "types differ",
+					FirstValue:  value,
+					SecondValue: rmValue,
+				},
+			}, fmt.Errorf("types differ at %s - %s is different from %s", pathStr, reflect.TypeOf(value).Kind(), reflect.TypeOf(rmValue).Kind())
 		}
 
 		switch reflect.TypeOf(value).Kind() {
 		case reflect.Map:
 			mgMap, ok1 := value.(map[string]interface{})
 			if !ok1 {
-				fmt.Printf("Type assertion failed for map at '%s'\n", pathStr)
-				return false, fmt.Errorf("type assertion failed for map at %s", pathStr)
+				// fmt.Printf("Type assertion failed for map at '%s'\n", pathStr)
+				return ComparisonResult{
+					IsEqual: false,
+					Reason: &Reason{
+						Reason:      "type assertion failed",
+						FirstValue:  value,
+						SecondValue: rmValue,
+					},
+				}, fmt.Errorf("type assertion failed for map at %s", pathStr)
 			}
 			rmMap, ok2 := rmValue.(map[string]interface{})
 			if !ok2 {
-				fmt.Printf("Type assertion failed for map at '%s'\n", pathStr)
-				return false, fmt.Errorf("type assertion failed for map at %s", pathStr)
+				// fmt.Printf("Type assertion failed for map at '%s'\n", pathStr)
+				return ComparisonResult{
+					IsEqual: false,
+					Reason: &Reason{
+						Reason:      "type assertion failed",
+						FirstValue:  value,
+						SecondValue: rmValue,
+					},
+				}, fmt.Errorf("type assertion failed for map at %s", pathStr)
 			}
-			ok, err := compareExisting(mgMap, rmMap, currentPath...)
+			res, err := compareExisting(mgMap, rmMap, currentPath...)
 			if err != nil {
-				return false, err
+				return ComparisonResult{
+					IsEqual: false,
+					Reason: &Reason{
+						Reason:      "error comparing maps",
+						FirstValue:  value,
+						SecondValue: rmValue,
+					},
+				}, err
 			}
-			if !ok {
-				fmt.Printf("Values differ at '%s'\n", pathStr)
-				return false, nil
+			if !res.IsEqual {
+				// fmt.Printf("Values differ at '%s'\n", pathStr)
+				return ComparisonResult{
+					IsEqual: false,
+					Reason: &Reason{
+						Reason:      "values differ",
+						FirstValue:  value,
+						SecondValue: rmValue,
+					},
+				}, nil
 			}
 		case reflect.Slice:
 			valueSlice, ok1 := value.([]interface{})
 			if !ok1 || reflect.TypeOf(rmValue).Kind() != reflect.Slice {
-				fmt.Printf("Values are not both slices or type assertion failed at '%s'\n", pathStr)
-				return false, fmt.Errorf("values are not both slices or type assertion failed at %s", pathStr)
+				// fmt.Printf("Values are not both slices or type assertion failed at '%s'\n", pathStr)
+				return ComparisonResult{
+					IsEqual: false,
+					Reason: &Reason{
+						Reason:      "values are not both slices or type assertion failed",
+						FirstValue:  value,
+						SecondValue: rmValue,
+					},
+				}, fmt.Errorf("values are not both slices or type assertion failed at %s", pathStr)
 			}
 			rmSlice, ok2 := rmValue.([]interface{})
 			if !ok2 {
-				fmt.Printf("Type assertion failed for slice at '%s'\n", pathStr)
-				return false, fmt.Errorf("type assertion failed for slice at %s", pathStr)
+				// fmt.Printf("Type assertion failed for slice at '%s'\n", pathStr)
+				return ComparisonResult{
+					IsEqual: false,
+					Reason: &Reason{
+						Reason:      "values are not both slices or type assertion failed",
+						FirstValue:  value,
+						SecondValue: rmValue,
+					},
+				}, fmt.Errorf("type assertion failed for slice at %s", pathStr)
 			}
 			for i, v := range valueSlice {
 				if reflect.TypeOf(v).Kind() == reflect.Map {
 					mgMap, ok1 := v.(map[string]interface{})
 					if !ok1 {
-						fmt.Printf("Type assertion failed for map at '%s'\n", pathStr)
-						return false, fmt.Errorf("type assertion failed for map at %s", pathStr)
+						// fmt.Printf("Type assertion failed for map at '%s'\n", pathStr)
+						return ComparisonResult{
+							IsEqual: false,
+							Reason: &Reason{
+								Reason:      "type assertion failed",
+								FirstValue:  value,
+								SecondValue: rmValue,
+							},
+						}, fmt.Errorf("type assertion failed for map at %s", pathStr)
 					}
 					rmMap, ok2 := rmSlice[i].(map[string]interface{})
 					if !ok2 {
-						fmt.Printf("Type assertion failed for map at '%s'\n", pathStr)
-						return false, fmt.Errorf("type assertion failed for map at %s", pathStr)
+						// fmt.Printf("Type assertion failed for map at '%s'\n", pathStr)
+						return ComparisonResult{
+							IsEqual: false,
+							Reason: &Reason{
+								Reason:      "type assertion failed",
+								FirstValue:  value,
+								SecondValue: rmValue,
+							},
+						}, fmt.Errorf("type assertion failed for map at %s", pathStr)
 					}
-					ok, err := compareExisting(mgMap, rmMap, currentPath...)
+					res, err := compareExisting(mgMap, rmMap, currentPath...)
 					if err != nil {
-						return false, err
+						return ComparisonResult{
+							IsEqual: false,
+							Reason: &Reason{
+								Reason:      "error comparing maps",
+								FirstValue:  value,
+								SecondValue: rmValue,
+							},
+						}, err
 					}
-					if !ok {
-						fmt.Printf("Values differ at '%s'\n", pathStr)
-						return false, nil
+					if !res.IsEqual {
+						// fmt.Printf("Values differ at '%s'\n", pathStr)
+						return ComparisonResult{
+							IsEqual: false,
+							Reason: &Reason{
+								Reason:      "values differ",
+								FirstValue:  value,
+								SecondValue: rmValue,
+							},
+						}, nil
 					}
 				} else if v != rmSlice[i] {
-					fmt.Printf("Values differ at '%s'\n", pathStr)
-					return false, nil
+					// fmt.Printf("Values differ at '%s'\n", pathStr)
+					return ComparisonResult{
+						IsEqual: false,
+						Reason: &Reason{
+							Reason:      "values differ",
+							FirstValue:  value,
+							SecondValue: rmValue,
+						},
+					}, nil
 				}
 			}
 		default:
 			ok, err := compareAny(value, rmValue)
 			if err != nil {
-				return false, err
+				return ComparisonResult{
+					IsEqual: false,
+					Reason: &Reason{
+						Reason:      "error comparing values",
+						FirstValue:  value,
+						SecondValue: rmValue,
+					},
+				}, err
 			}
 			if !ok {
-				fmt.Printf("Values differ at '%s' %s %s\n", pathStr, value, rmValue)
-				return false, nil
+				// fmt.Printf("Values differ at '%s' %s %s\n", pathStr, value, rmValue)
+				return ComparisonResult{
+					IsEqual: false,
+					Reason: &Reason{
+						Reason:      "values differ",
+						FirstValue:  value,
+						SecondValue: rmValue,
+					},
+				}, nil
 			}
 		}
 	}
 
-	return true, nil
+	return ComparisonResult{IsEqual: true}, nil
 }
 func numberCaster(value interface{}) int64 {
 	switch v := value.(type) {
