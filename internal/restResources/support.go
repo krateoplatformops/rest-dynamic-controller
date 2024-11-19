@@ -381,21 +381,21 @@ func compareAny(a any, b any) (bool, error) {
 	case string:
 		sa, ok := a.(string)
 		if !ok {
-			return false, fmt.Errorf("Type assertion failed - to string: %v", a)
+			return false, fmt.Errorf("type assertion failed - to string: %v", a)
 		}
 		sb, ok := b.(string)
 		if !ok {
-			return false, fmt.Errorf("Type assertion failed - to string: %v", b)
+			return false, fmt.Errorf("type assertion failed - to string: %v", b)
 		}
 		return sa == sb, nil
 	case bool:
 		ba, ok := a.(bool)
 		if !ok {
-			return false, fmt.Errorf("Type assertion failed - to bool: %v", a)
+			return false, fmt.Errorf("type assertion failed - to bool: %v", a)
 		}
 		bb, ok := b.(bool)
 		if !ok {
-			return false, fmt.Errorf("Type assertion failed - to bool: %v", b)
+			return false, fmt.Errorf("type assertion failed - to bool: %v", b)
 		}
 		return ba == bb, nil
 	default:
