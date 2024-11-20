@@ -196,12 +196,18 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Updating status", "error", err)
 			return controller.ExternalObservation{}, err
 		}
-		ok, err := isCRUpdated(mg, *body)
+		res, err := isCRUpdated(mg, *body)
 		if err != nil {
 			log.Debug("Checking if CR is updated", "error", err)
 			return controller.ExternalObservation{}, err
 		}
-		if !ok {
+		if !res.IsEqual {
+			cond := condition.Unavailable()
+			if res.Reason != nil {
+				cond.Reason = fmt.Sprintf("Resource is not up-to-date due to %s - spec value: %s, remote value: %s", res.Reason.Reason, res.Reason.FirstValue, res.Reason.SecondValue)
+			}
+
+			unstructuredtools.SetCondition(mg, cond)
 			log.Debug("External resource not up-to-date", "kind", mg.GetKind())
 			return controller.ExternalObservation{
 					ResourceExists:   true,
