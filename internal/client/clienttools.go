@@ -1,8 +1,10 @@
 package restclient
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -16,6 +18,7 @@ import (
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 	orderedmap "github.com/pb33f/libopenapi/orderedmap"
+	"k8s.io/client-go/dynamic"
 )
 
 type APICallType string
@@ -241,14 +244,20 @@ func (u *UnstructuredClient) RequestedParams(httpMethod string, path string) (pa
 }
 
 // BuildClient is a function that builds partial client from a swagger file.
-func BuildClient(swaggerPath string) (*UnstructuredClient, error) {
+func BuildClient(ctx context.Context, kubeclient dynamic.Interface, swaggerPath string) (*UnstructuredClient, error) {
 	basePath := "/tmp/rest-dynamic-controller"
 	err := os.MkdirAll(basePath, 0755)
 	defer os.RemoveAll(basePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create directory: %w", err)
 	}
-	err = fgetter.GetFile(filepath.Join(basePath, filepath.Base(swaggerPath)), swaggerPath, nil)
+
+	fgetter := &fgetter.Filegetter{
+		Client:     http.DefaultClient,
+		KubeClient: kubeclient,
+	}
+
+	err = fgetter.GetFile(ctx, filepath.Join(basePath, filepath.Base(swaggerPath)), swaggerPath, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download file: %w", err)
 	}

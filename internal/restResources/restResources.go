@@ -86,7 +86,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		return controller.ExternalObservation{}, err
 	}
 
-	cli, err := restclient.BuildClient(clientInfo.URL)
+	cli, err := restclient.BuildClient(ctx, h.dynamicClient, clientInfo.URL)
 	if err != nil {
 		log.Debug("Building REST client", "error", err)
 		return controller.ExternalObservation{}, err
@@ -258,7 +258,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	cli, err := restclient.BuildClient(clientInfo.URL)
+	cli, err := restclient.BuildClient(ctx, h.dynamicClient, clientInfo.URL)
 	if err != nil {
 		log.Debug("Building REST client", "error", err)
 		return err
@@ -328,7 +328,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	cli, err := restclient.BuildClient(clientInfo.URL)
+	cli, err := restclient.BuildClient(ctx, h.dynamicClient, clientInfo.URL)
 	if err != nil {
 		log.Debug("Building REST client", "error", err)
 		return err
@@ -415,7 +415,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	cli, err := restclient.BuildClient(clientInfo.URL)
+	cli, err := restclient.BuildClient(ctx, h.dynamicClient, clientInfo.URL)
 	if err != nil {
 		log.Debug("Building REST client", "error", err)
 		return err
