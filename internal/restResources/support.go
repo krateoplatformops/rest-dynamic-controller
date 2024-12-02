@@ -422,7 +422,12 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 		for k, v := range *body {
 			for _, identifier := range clientInfo.Resource.Identifiers {
 				if k == identifier {
-					err := unstructured.SetNestedField(mg.Object, text.GenericToString(v), "status", identifier)
+					stringValue, err := text.GenericToString(v)
+					if err != nil {
+						log.Err(err).Msg("Converting value to string")
+						return err
+					}
+					err = unstructured.SetNestedField(mg.Object, stringValue, "status", identifier)
 					if err != nil {
 						log.Err(err).Msg("Setting identifier")
 						return err
