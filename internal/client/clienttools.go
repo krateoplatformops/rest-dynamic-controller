@@ -96,7 +96,7 @@ func buildPath(baseUrl string, path string, parameters map[string]string, query 
 	if err != nil {
 		return nil
 	}
-	parsed.Path = path
+	parsed.Path = parsed.Path + path
 	parsed.RawQuery = params.Encode()
 	return parsed
 }
