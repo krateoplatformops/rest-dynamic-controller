@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/gobuffalo/flect v1.0.2
-	github.com/krateoplatformops/unstructured-runtime v0.0.5
+	github.com/krateoplatformops/unstructured-runtime v0.0.9
 	github.com/lucasepe/httplib v0.2.2
 	github.com/pb33f/libopenapi v0.16.8
 	github.com/rs/zerolog v1.32.0

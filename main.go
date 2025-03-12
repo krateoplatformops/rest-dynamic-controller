@@ -91,8 +91,9 @@ func main() {
 
 	var handler controller.ExternalClient
 
+	pluralizer := pluralizer.New(urlplurals, http.DefaultClient)
 	var swg getter.Getter
-	swg, err = getter.Dynamic(cfg)
+	swg, err = getter.Dynamic(cfg, pluralizer)
 	if err != nil {
 		log.Debug("Creating chart url info getter.", "error", err)
 	}
@@ -104,8 +105,6 @@ func main() {
 		WithValues("version", *resourceVersion).
 		WithValues("resource", *resourceName).
 		Info("Starting.", "serviceName", serviceName)
-
-	pluralizer := pluralizer.New(urlplurals, http.DefaultClient)
 
 	handler = restResources.NewHandler(cfg, log, swg, *pluralizer)
 

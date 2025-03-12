@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gobuffalo/flect"
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/client"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/text"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	"github.com/lucasepe/httplib"
 
@@ -84,13 +84,14 @@ func Static(chart string) Getter {
 	return staticGetter{chartName: chart}
 }
 
-func Dynamic(cfg *rest.Config) (Getter, error) {
+func Dynamic(cfg *rest.Config, pluralizer pluralizer.PluralizerInterface) (Getter, error) {
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
 
 	return &dynamicGetter{
+		pluralizer:    pluralizer,
 		dynamicClient: dyn,
 	}, nil
 }
@@ -111,18 +112,14 @@ var _ Getter = (*dynamicGetter)(nil)
 
 type dynamicGetter struct {
 	dynamicClient dynamic.Interface
+	pluralizer    pluralizer.PluralizerInterface
 }
 
 func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
-	gvr, err := unstructuredtools.GVR(un)
+	gvr, err := g.pluralizer.GVKtoGVR(un.GroupVersionKind())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting GVR for '%v' in namespace: %s", un.GetKind(), un.GetNamespace())
 	}
-
-	// sel, err := selectorForGroup(gvr)
-	// if err != nil {
-	// 	return nil, err
-	// }
 
 	gvrForDefinitions := schema.GroupVersionResource{
 		Group:    "swaggergen.krateo.io",
@@ -134,7 +131,7 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 		Namespace(un.GetNamespace()).
 		List(context.Background(), metav1.ListOptions{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting definitions for '%v' in namespace: %s - %w", gvr.String(), un.GetNamespace(), err)
 	}
 	if len(all.Items) == 0 {
 		return nil, fmt.Errorf("no definitions found for '%v' in namespace: %s", gvr, un.GetNamespace())
@@ -240,17 +237,22 @@ func (g *dynamicGetter) getAuth(un *unstructured.Unstructured) (httplib.AuthMeth
 		}
 	}
 
-	gvrForAuthentication := schema.GroupVersionResource{
-		Group:    gvr.Group,
-		Version:  "v1alpha1",
-		Resource: strings.ToLower(flect.Pluralize(fmt.Sprintf("%sAuth", text.ToGolangName(authType.String())))),
+	gvkForAuthentication := schema.GroupVersionKind{
+		Group:   gvr.Group,
+		Version: "v1alpha1",
+		Kind:    fmt.Sprintf("%sAuth", text.ToGolangName(authType.String())),
+	}
+
+	gvrForAuthentication, err := g.pluralizer.GVKtoGVR(gvkForAuthentication)
+	if err != nil {
+		return nil, fmt.Errorf("error getting GVR for '%v' in namespace: %s", gvkForAuthentication.Kind, un.GetNamespace())
 	}
 
 	auth, err := g.dynamicClient.Resource(gvrForAuthentication).
 		Namespace(un.GetNamespace()).
 		Get(context.Background(), authRef, metav1.GetOptions{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting authentication for '%v' in namespace: %s - %w", gvr, un.GetNamespace(), err)
 	}
 
 	return parseAuthentication(auth, authType, g.dynamicClient)
