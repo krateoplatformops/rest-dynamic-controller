@@ -10,12 +10,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/krateoplatformops/snowplow/plumbing/env"
 	genctrl "github.com/krateoplatformops/unstructured-runtime"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	restResources "github.com/krateoplatformops/rest-dynamic-controller/internal/restResources"
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/support"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
@@ -37,23 +38,27 @@ var (
 
 func main() {
 	// Flags
-	kubeconfig := flag.String("kubeconfig", support.EnvString("KUBECONFIG", ""),
+	kubeconfig := flag.String("kubeconfig", env.String("KUBECONFIG", ""),
 		"absolute path to the kubeconfig file")
 	debug := flag.Bool("debug",
-		support.EnvBool("REST_CONTROLLER_DEBUG", false), "dump verbose output")
-	workers := flag.Int("workers", support.EnvInt("REST_CONTROLLER_WORKERS", 1), "number of workers")
+		env.Bool("REST_CONTROLLER_DEBUG", false), "dump verbose output")
+	workers := flag.Int("workers", env.Int("REST_CONTROLLER_WORKERS", 1), "number of workers")
 	resyncInterval := flag.Duration("resync-interval",
-		support.EnvDuration("REST_CONTROLLER_RESYNC_INTERVAL", time.Minute*1), "resync interval")
+		env.Duration("REST_CONTROLLER_RESYNC_INTERVAL", time.Minute*1), "resync interval")
 	resourceGroup := flag.String("group",
-		support.EnvString("REST_CONTROLLER_GROUP", ""), "resource api group")
+		env.String("REST_CONTROLLER_GROUP", ""), "resource api group")
 	resourceVersion := flag.String("version",
-		support.EnvString("REST_CONTROLLER_VERSION", ""), "resource api version")
+		env.String("REST_CONTROLLER_VERSION", ""), "resource api version")
 	resourceName := flag.String("resource",
-		support.EnvString("REST_CONTROLLER_RESOURCE", ""), "resource plural name")
+		env.String("REST_CONTROLLER_RESOURCE", ""), "resource plural name")
 	namespace := flag.String("namespace",
-		support.EnvString("REST_CONTROLLER_NAMESPACE", "default"), "namespace")
+		env.String("REST_CONTROLLER_NAMESPACE", "default"), "namespace")
 	urlplurals := flag.String("urlplurals",
-		support.EnvString("URL_PLURALS", "http://bff.krateo-system.svc.cluster.local:8081/api-info/names"), "url plurals")
+		env.String("URL_PLURALS", "http://snowplow.krateo-system.svc.cluster.local:8081/api-info/names"), "url plurals")
+	maxErrorRetryInterval := flag.Duration("max-error-retry-interval",
+		env.Duration("REST_CONTROLLER_MAX_ERROR_RETRY_INTERVAL", 30*time.Second), "The maximum interval between retries when an error occurs. This should be less than the half of the resync interval.")
+	minErrorRetryInterval := flag.Duration("min-error-retry-interval",
+		env.Duration("REST_CONTROLLER_MIN_ERROR_RETRY_INTERVAL", 1*time.Second), "The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval.")
 
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
@@ -117,13 +122,14 @@ func main() {
 			Version:  *resourceVersion,
 			Resource: *resourceName,
 		},
-		Namespace:    *namespace,
-		Config:       cfg,
-		Debug:        *debug,
-		Logger:       log,
-		ProviderName: serviceName,
-		ListWatcher:  controller.ListWatcherConfiguration{},
-		Pluralizer:   *pluralizer,
+		Namespace:         *namespace,
+		Config:            cfg,
+		Debug:             *debug,
+		Logger:            log,
+		ProviderName:      serviceName,
+		ListWatcher:       controller.ListWatcherConfiguration{},
+		Pluralizer:        *pluralizer,
+		GlobalRateLimiter: workqueue.NewExponentialTimedFailureRateLimiter[any](*minErrorRetryInterval, *maxErrorRetryInterval),
 	})
 	controller.SetExternalClient(handler)
 
