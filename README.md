@@ -86,12 +86,14 @@ spec:
 
 The following environment variables can be configured in the rest-dynamic-controller's Deployment:
 
-| Name | Description | Default Value |
-|------|-------------|---------------|
+| Name | Description  | Default Value |
+|------|--------------|---------------|
 | REST_CONTROLLER_DEBUG | Enable verbose output | `false` |
 | REST_CONTROLLER_WORKERS | Number of worker threads | `1` |
 | REST_CONTROLLER_RESYNC_INTERVAL | Interval between resyncs | `3m` |
 | REST_CONTROLLER_GROUP | Resource API group | - |
 | REST_CONTROLLER_VERSION | Resource API version | - |
 | REST_CONTROLLER_RESOURCE | Resource plural name | - |
-| URL_PLURALS | BFF plurals endpoint | `http://bff.krateo-system.svc.cluster.local:8081/api-info/names` |
+| URL_PLURALS | BFF plurals endpoint | `http://snowplow.krateo-system.svc.cluster.local:8081/api-info/names` |
+| REST_CONTROLLER_MAX_ERROR_RETRY_INTERVAL | The maximum interval between retries when an error occurs. This should be less than the half of the resync interval. | `30s` | 
+| REST_CONTROLLER_MIN_ERROR_RETRY_INTERVAL | The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval. | `1s` | 

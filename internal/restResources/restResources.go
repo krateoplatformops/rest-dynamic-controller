@@ -145,7 +145,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Resource is assumed to be up-to-date.")
 			cond := condition.Available()
 			cond.Message = "Resource is assumed to be up-to-date. API call not found for FindBy."
-			err = unstructuredtools.SetCondition(mg, cond)
+			err = unstructuredtools.SetConditions(mg, cond)
 			if err != nil {
 				log.Debug("Setting condition", "error", err)
 				return controller.ExternalObservation{}, err
@@ -207,7 +207,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 				cond.Reason = fmt.Sprintf("Resource is not up-to-date due to %s - spec value: %s, remote value: %s", res.Reason.Reason, res.Reason.FirstValue, res.Reason.SecondValue)
 			}
 
-			unstructuredtools.SetCondition(mg, cond)
+			unstructuredtools.SetConditions(mg, cond)
 			log.Debug("External resource not up-to-date", "kind", mg.GetKind())
 			return controller.ExternalObservation{
 					ResourceExists:   true,
@@ -219,7 +219,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		}
 	}
 	log.Debug("Setting condition", "kind", mg.GetKind())
-	err = unstructuredtools.SetCondition(mg, condition.Available())
+	err = unstructuredtools.SetConditions(mg, condition.Available())
 	if err != nil {
 		log.Debug("Setting condition", "error", err)
 		return controller.ExternalObservation{}, err
@@ -285,7 +285,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	log.Debug("Creating external resource", "kind", mg.GetKind())
 
-	err = unstructuredtools.SetCondition(mg, condition.Creating())
+	err = unstructuredtools.SetConditions(mg, condition.Creating())
 	if err != nil {
 		log.Debug("Setting condition", "error", err)
 		return err
@@ -367,7 +367,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 
 	log.Debug("Creating external resource", "kind", mg.GetKind())
 
-	err = unstructuredtools.SetCondition(mg, condition.Creating())
+	err = unstructuredtools.SetConditions(mg, condition.Creating())
 	if err != nil {
 		log.Debug("Setting condition", "error", err)
 		return err
@@ -455,7 +455,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 
 	log.Debug("Setting condition", "kind", mg.GetKind())
 
-	err = unstructuredtools.SetCondition(mg, condition.Deleting())
+	err = unstructuredtools.SetConditions(mg, condition.Deleting())
 	if err != nil {
 		log.Debug("Setting condition", "error", err)
 		return err

@@ -10,7 +10,6 @@ import (
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/client"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/text"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
-	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	"github.com/lucasepe/httplib"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -207,9 +206,9 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 // getAuth returns the authentication method for the given resource.
 // It returns an error if the authentication object is not valid.
 func (g *dynamicGetter) getAuth(un *unstructured.Unstructured) (httplib.AuthMethod, error) {
-	gvr, err := unstructuredtools.GVR(un)
+	gvr, err := g.pluralizer.GVKtoGVR(un.GroupVersionKind())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting GVR for '%v' in namespace: %s", un.GetKind(), un.GetNamespace())
 	}
 
 	var authRef string
@@ -261,24 +260,20 @@ func (g *dynamicGetter) getAuth(un *unstructured.Unstructured) (httplib.AuthMeth
 // parseAuthentication parses the authentication object and returns the appropriate AuthMethod for the given AuthType.
 // It returns an error if the authentication object is not valid.
 func parseAuthentication(un *unstructured.Unstructured, authType restclient.AuthType, dyn dynamic.Interface) (httplib.AuthMethod, error) {
-	gvr, err := unstructuredtools.GVR(un)
-	if err != nil {
-		return nil, err
-	}
 	if authType == restclient.AuthTypeBasic {
 		username, ok, err := unstructured.NestedString(un.Object, "spec", "username")
 		if err != nil {
 			return nil, err
 		}
 		if !ok {
-			return nil, fmt.Errorf("missing spec.username in definition for '%v' in namespace: %s", gvr, un.GetNamespace())
+			return nil, fmt.Errorf("missing spec.username in definition for 'apiVersion: %v, kind: %v' in namespace: %s", un.GetAPIVersion(), un.GetKind(), un.GetNamespace())
 		}
 		passwordRef, ok, err := unstructured.NestedStringMap(un.Object, "spec", "passwordRef")
 		if err != nil {
 			return nil, err
 		}
 		if !ok {
-			return nil, fmt.Errorf("missing spec.passwordRef in definition for '%v' in namespace: %s", gvr, un.GetNamespace())
+			return nil, fmt.Errorf("missing spec.passwordRef in definition for 'apiVersion: %v, kind: %v' in namespace: %s", un.GetAPIVersion(), un.GetKind(), un.GetNamespace())
 		}
 
 		password, err := GetSecret(context.Background(), dyn, SecretKeySelector{
@@ -287,7 +282,7 @@ func parseAuthentication(un *unstructured.Unstructured, authType restclient.Auth
 			Key:       passwordRef["key"],
 		})
 		if err != nil {
-			return nil, fmt.Errorf("error getting password for '%v' in namespace: %s - %w", gvr, un.GetNamespace(), err)
+			return nil, fmt.Errorf("error getting password for 'apiVersion: %v, kind: %v' in namespace: %s - %w", un.GetAPIVersion(), un.GetKind(), un.GetNamespace(), err)
 		}
 
 		return &httplib.BasicAuth{
@@ -300,7 +295,7 @@ func parseAuthentication(un *unstructured.Unstructured, authType restclient.Auth
 			return nil, err
 		}
 		if !ok {
-			return nil, fmt.Errorf("missing spec.tokenRef in definition for '%v' in namespace: %s", gvr, un.GetNamespace())
+			return nil, fmt.Errorf("missing spec.tokenRef in definition for 'apiVersion: %v, kind: %v' in namespace: %s", un.GetAPIVersion(), un.GetKind(), un.GetNamespace())
 		}
 		token, err := GetSecret(context.Background(), dyn, SecretKeySelector{
 			Name:      tokenRef["name"],
@@ -308,7 +303,7 @@ func parseAuthentication(un *unstructured.Unstructured, authType restclient.Auth
 			Key:       tokenRef["key"],
 		})
 		if err != nil {
-			return nil, fmt.Errorf("error getting token for '%v' in namespace: %s - %w", gvr, un.GetNamespace(), err)
+			return nil, fmt.Errorf("error getting token for 'apiVersion: %v, kind: %v' in namespace: %s - %w", un.GetAPIVersion(), un.GetKind(), un.GetNamespace(), err)
 		}
 
 		return &httplib.TokenAuth{
