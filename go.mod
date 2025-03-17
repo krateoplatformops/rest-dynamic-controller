@@ -7,7 +7,7 @@ toolchain go1.23.4
 require (
 	github.com/gobuffalo/flect v1.0.3
 	github.com/krateoplatformops/snowplow v0.0.0-20250311104630-6e215130151f
-	github.com/krateoplatformops/unstructured-runtime v0.0.0-00010101000000-000000000000
+	github.com/krateoplatformops/unstructured-runtime v0.1.1
 	github.com/lucasepe/httplib v0.2.2
 	github.com/pb33f/libopenapi v0.16.8
 	github.com/rs/zerolog v1.33.0
@@ -71,5 +71,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.2 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
-
-replace github.com/krateoplatformops/unstructured-runtime => ../unstructured-runtime
