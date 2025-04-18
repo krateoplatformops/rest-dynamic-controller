@@ -30,9 +30,10 @@ type CallInfo struct {
 	Path             string
 	ReqParams        *RequestedParams
 	IdentifierFields []string
+	Method           string
 }
 
-type APIFuncDef func(ctx context.Context, cli *http.Client, path string, conf *restclient.RequestConfiguration) (*map[string]interface{}, error)
+type APIFuncDef func(ctx context.Context, cli *http.Client, path string, conf *restclient.RequestConfiguration) (any, error)
 
 // APICallBuilder builds the API call based on the action and the info from the RestDefinition
 func APICallBuilder(cli *restclient.UnstructuredClient, info *getter.Info, action apiaction.APIAction) (apifunc APIFuncDef, callInfo *CallInfo, err error) {
@@ -40,9 +41,6 @@ func APICallBuilder(cli *restclient.UnstructuredClient, info *getter.Info, actio
 	for _, descr := range info.Resource.VerbsDescription {
 		if strings.EqualFold(descr.Action, action.String()) {
 			method, err := restclient.StringToApiCallType(descr.Method)
-			if action == apiaction.FindBy {
-				method = restclient.APICallsTypeFindBy
-			}
 			if err != nil {
 				return nil, nil, fmt.Errorf("error converting method to api call type: %s", err)
 			}
@@ -62,7 +60,8 @@ func APICallBuilder(cli *restclient.UnstructuredClient, info *getter.Info, actio
 			}
 
 			callInfo := &CallInfo{
-				Path: descr.Path,
+				Path:   descr.Path,
+				Method: method.String(),
 				ReqParams: &RequestedParams{
 					Parameters: params,
 					Query:      query,
@@ -70,21 +69,13 @@ func APICallBuilder(cli *restclient.UnstructuredClient, info *getter.Info, actio
 				},
 				IdentifierFields: identifierFields,
 			}
-			switch method {
-			case restclient.APICallsTypeGet:
-				return cli.Get, callInfo, nil
-			case restclient.APICallsTypePost:
-				return cli.Post, callInfo, nil
-			case restclient.APICallsTypeList:
-				return cli.List, callInfo, nil
-			case restclient.APICallsTypeDelete:
-				return cli.Delete, callInfo, nil
-			case restclient.APICallsTypePatch:
-				return cli.Patch, callInfo, nil
-			case restclient.APICallsTypeFindBy:
+
+			switch action {
+			// FindBy is used to find the resource by the identifier fields
+			case apiaction.FindBy:
 				return cli.FindBy, callInfo, nil
-			case restclient.APICallsTypePut:
-				return cli.Put, callInfo, nil
+			default:
+				return cli.Call, callInfo, nil
 			}
 		}
 	}
@@ -96,6 +87,7 @@ func BuildCallConfig(callInfo *CallInfo, statusFields map[string]interface{}, sp
 	reqConfiguration := &restclient.RequestConfiguration{}
 	reqConfiguration.Parameters = make(map[string]string)
 	reqConfiguration.Query = make(map[string]string)
+	reqConfiguration.Method = callInfo.Method
 	mapBody := make(map[string]interface{})
 
 	processFields(callInfo, specFields, reqConfiguration, mapBody)

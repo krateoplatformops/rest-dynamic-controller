@@ -11,6 +11,7 @@ require (
 	github.com/lucasepe/httplib v0.2.2
 	github.com/pb33f/libopenapi v0.16.8
 	github.com/rs/zerolog v1.33.0
+	github.com/stretchr/testify v1.10.0
 	k8s.io/api v0.32.1
 	k8s.io/apimachinery v0.32.1
 	k8s.io/client-go v0.32.1
@@ -45,6 +46,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/twmb/murmur3 v1.1.8 // indirect
 	github.com/vmware-labs/yaml-jsonpath v0.3.2 // indirect

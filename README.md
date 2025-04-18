@@ -90,7 +90,7 @@ The following environment variables can be configured in the rest-dynamic-contro
 |------|--------------|---------------|
 | REST_CONTROLLER_DEBUG | Enable verbose output | `false` |
 | REST_CONTROLLER_WORKERS | Number of worker threads | `1` |
-| REST_CONTROLLER_RESYNC_INTERVAL | Interval between resyncs | `3m` |
+| REST_CONTROLLER_RESYNC_INTERVAL | Interval between resyncs | `1m` |
 | REST_CONTROLLER_GROUP | Resource API group | - |
 | REST_CONTROLLER_VERSION | Resource API version | - |
 | REST_CONTROLLER_RESOURCE | Resource plural name | - |

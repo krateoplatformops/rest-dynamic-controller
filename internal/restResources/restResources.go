@@ -91,8 +91,9 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		log.Debug("Building REST client", "error", err)
 		return controller.ExternalObservation{}, err
 	}
-	cli.Auth = clientInfo.Auth
-	cli.Verbose = meta.IsVerbose(mg)
+
+	cli.Debug = meta.IsVerbose(mg)
+	cli.SetAuth = clientInfo.SetAuth
 	cli.IdentifierFields = clientInfo.Resource.Identifiers
 	cli.SpecFields = mg
 	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
@@ -104,7 +105,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	if err != nil {
 		log.Debug("Error getting status.", "error", err)
 	}
-	var body *map[string]interface{}
+	var body any
 	isKnown := isResourceKnown(cli, log, clientInfo, statusFields, specFields)
 
 	if isKnown {
@@ -181,8 +182,14 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		}
 	}
 
-	if body != nil {
-		err = populateStatusFields(clientInfo, mg, body)
+	b, ok := body.(*map[string]interface{})
+	if !ok {
+		log.Debug("Performing REST call", "error", "body is not a map")
+		return controller.ExternalObservation{}, fmt.Errorf("body is not a map")
+	}
+
+	if b != nil {
+		err = populateStatusFields(clientInfo, mg, b)
 		if err != nil {
 			log.Debug("Updating identifiers", "error", err)
 			return controller.ExternalObservation{}, err
@@ -196,7 +203,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Updating status", "error", err)
 			return controller.ExternalObservation{}, err
 		}
-		res, err := isCRUpdated(mg, *body)
+		res, err := isCRUpdated(mg, *b)
 		if err != nil {
 			log.Debug("Checking if CR is updated", "error", err)
 			return controller.ExternalObservation{}, err
@@ -263,8 +270,8 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("Building REST client", "error", err)
 		return err
 	}
-	cli.Auth = clientInfo.Auth
-	cli.Verbose = meta.IsVerbose(mg)
+	cli.Debug = meta.IsVerbose(mg)
+	cli.SetAuth = clientInfo.SetAuth
 
 	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 	if err != nil {
@@ -282,6 +289,16 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("Performing REST call", "error", err)
 		return err
 	}
+	body, ok := body.(*map[string]interface{})
+	if !ok {
+		log.Debug("Performing REST call", "error", "body is not a map")
+		return fmt.Errorf("body is not a map")
+	}
+	b, ok := body.(*map[string]interface{})
+	if !ok {
+		log.Debug("Performing REST call", "error", "body is not a map")
+		return fmt.Errorf("body is not a map")
+	}
 
 	log.Debug("Creating external resource", "kind", mg.GetKind())
 
@@ -291,7 +308,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	err = populateStatusFields(clientInfo, mg, body)
+	err = populateStatusFields(clientInfo, mg, b)
 	if err != nil {
 		log.Debug("Updating identifiers", "error", err)
 		return err
@@ -333,8 +350,8 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("Building REST client", "error", err)
 		return err
 	}
-	cli.Auth = clientInfo.Auth
-	cli.Verbose = meta.IsVerbose(mg)
+	cli.Debug = meta.IsVerbose(mg)
+	cli.SetAuth = clientInfo.SetAuth
 
 	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 	if err != nil {
@@ -359,7 +376,13 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	err = populateStatusFields(clientInfo, mg, body)
+	b, ok := body.(*map[string]interface{})
+	if !ok {
+		log.Debug("Performing REST call", "error", "body is not a map")
+		return fmt.Errorf("body is not a map")
+	}
+
+	err = populateStatusFields(clientInfo, mg, b)
 	if err != nil {
 		log.Debug("Updating identifiers", "error", err)
 		return err
@@ -420,8 +443,8 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("Building REST client", "error", err)
 		return err
 	}
-	cli.Auth = clientInfo.Auth
-	cli.Verbose = true
+	cli.Debug = meta.IsVerbose(mg)
+	cli.SetAuth = clientInfo.SetAuth
 
 	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 	if err != nil {

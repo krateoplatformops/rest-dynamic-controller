@@ -1,75 +1,24 @@
 package restclient
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
+	"net/http/httputil"
 	"strings"
 
-	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
-
-	"github.com/krateoplatformops/snowplow/plumbing/endpoints"
-	"github.com/krateoplatformops/snowplow/plumbing/http/request"
-	"github.com/krateoplatformops/snowplow/plumbing/ptr"
-	"github.com/pb33f/libopenapi"
-	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
+	"github.com/lucasepe/httplib"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-type UnstructuredClient struct {
-	IdentifierFields []string
-	SpecFields       *unstructured.Unstructured
-	DocScheme        *libopenapi.DocumentModel[v3.Document]
-	Endpoint         *endpoints.Endpoint
-}
-
-type APIError struct {
-	Message   string `json:"message"`
-	TypeKey   string `json:"typeKey"`
-	ErrorCode int    `json:"errorCode"`
-	EventID   int    `json:"eventId"`
-}
-
-type RequestConfiguration struct {
-	Parameters map[string]string
-	Query      map[string]string
-	Body       interface{}
-	Method     string
-}
-
-// 'field' could be in the format of 'spec.field1.field2'
-func (u *UnstructuredClient) isInSpecFields(field, value string) (bool, error) {
-	fields := strings.Split(field, ".")
-	specs, err := unstructuredtools.GetFieldsFromUnstructured(u.SpecFields, "spec")
-	if err != nil {
-		return false, fmt.Errorf("error getting fields from unstructured: %w", err)
-	}
-
-	val, ok, err := unstructured.NestedFieldCopy(specs, fields...)
-	if err != nil {
-		return false, fmt.Errorf("error getting nested field: %w", err)
-	}
-	if !ok {
-		return false, nil
-	}
-	if reflect.DeepEqual(val, value) {
-		return true, nil
-	}
-
-	return false, nil
-}
-
 func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (any, error) {
-	uri := buildPath(path, opts.Parameters, opts.Query)
+	uri := buildPath(u.Server, path, opts.Parameters, opts.Query)
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {
 		return nil, fmt.Errorf("path not found: %s", path)
-	}
-	if len(pathItem.Get.Servers) > 0 {
-		u.Endpoint.ServerURL = pathItem.Get.Servers[0].URL
 	}
 	httpMethod := string(opts.Method)
 
@@ -80,40 +29,60 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 
 	var response any
 
-	var payload *string
-	var headers []string
+	var payload []byte
+	var headers http.Header
 	if opts.Body == nil {
 		payload = nil
-		headers = nil
+		headers = make(http.Header)
 	} else {
 		jsonBody, err := json.Marshal(opts.Body)
 		if err != nil {
 			return nil, err
 		}
-		payload = ptr.To(string(jsonBody))
-		headers = []string{"Content-Type", "application/json"}
+		payload = jsonBody
+		headers = make(http.Header)
+		headers.Set("Content-Type", "application/json")
 	}
-	res := request.Do(ctx, request.RequestOptions{
-		Verb:     ptr.To(httpMethod),
-		Endpoint: u.Endpoint,
-		Headers:  headers,
-		Path:     uri.String(),
-		Payload:  payload,
-		ResponseHandler: func(rc io.ReadCloser) error {
-			if rc == nil {
-				return nil
-			}
-			defer rc.Close()
-			data, err := io.ReadAll(rc)
-			if err != nil {
-				return err
-			}
-			if len(data) == 0 {
-				return nil
-			}
-			return json.Unmarshal(data, &response)
-		},
-	})
+
+	req := &http.Request{
+		Method: httpMethod,
+		URL:    uri,
+		Proto:  "HTTP/1.1",
+		Body:   io.NopCloser(bytes.NewReader(payload)),
+		Header: headers,
+	}
+
+	if u.Debug {
+		cli.Transport = &debuggingRoundTripper{
+			Transport: cli.Transport,
+		}
+	}
+
+	// if u.HasBasicAuth() && u.HasBearerToken() {
+	// 	return nil, fmt.Errorf("both basic auth and bearer token are set, only one is allowed")
+	// }
+	// if u.HasBasicAuth() {
+	// 	req.SetBasicAuth(u.Username, u.Password)
+	// } else if u.HasBearerToken() {
+	// 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", u.Token))
+	// }
+
+	if u.SetAuth != nil {
+		u.SetAuth(req)
+	}
+
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %w", err)
+	}
+
+	defer resp.Body.Close()
+
+	err = handleResponse(resp.Body, &response)
+	if err != nil {
+		return nil, fmt.Errorf("error handling response: %w", err)
+	}
+
 	getDoc, ok := pathItem.GetOperations().Get(strings.ToLower(httpMethod))
 	if !ok {
 		return nil, fmt.Errorf("operation not found: %s", httpMethod)
@@ -123,8 +92,8 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		return nil, err
 	}
 
-	if !HasValidStatusCode(res.Code, validStatusCodes...) {
-		return nil, fmt.Errorf("unexpected status code: %d - message: %s - status: %s", res.Code, res.Message, res.Status)
+	if !HasValidStatusCode(resp.StatusCode, validStatusCodes...) {
+		return nil, fmt.Errorf("unexpected status code: %d - status: %s", resp.StatusCode, resp.Status)
 	}
 
 	val, ok := response.(map[string]interface{})
@@ -132,4 +101,101 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		return nil, nil
 	}
 	return &val, nil
+}
+
+func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (any, error) {
+	list, err := u.Call(ctx, cli, path, opts)
+	if err != nil {
+		return nil, err
+	}
+	if list == nil {
+		return nil, nil
+	}
+
+	var li map[string]interface{}
+
+	if _, ok := list.([]interface{}); !ok {
+		li = map[string]interface{}{
+			"items": list,
+		}
+	}
+
+	if _, ok := list.(map[string]interface{}); !ok {
+		return nil, fmt.Errorf("unexpected response type: %T", list)
+	}
+
+	for _, v := range li {
+		if v, ok := v.([]interface{}); ok {
+			if len(v) > 0 {
+				for _, item := range v {
+					if item, ok := item.(map[string]interface{}); ok {
+
+						for _, ide := range u.IdentifierFields {
+							idepath := strings.Split(ide, ".") // split the identifier field by '.'
+							responseValue, _, err := unstructured.NestedString(item, idepath...)
+							if err != nil {
+								val, _, err := unstructured.NestedFieldCopy(item, idepath...)
+								if err != nil {
+									return nil, fmt.Errorf("error getting nested field: %w", err)
+								}
+								responseValue = fmt.Sprintf("%v", val)
+							}
+							ok, err = u.isInSpecFields(ide, responseValue)
+							if err != nil {
+								return nil, err
+							}
+							if ok {
+								return &item, nil
+							}
+						}
+					}
+				}
+			}
+			break
+		}
+	}
+	return nil, &httplib.StatusError{StatusCode: 404}
+}
+
+// buildPath constructs the URL path with the given parameters and query.
+// response should be a pointer to the object where the response will be unmarshalled.
+func handleResponse(rc io.ReadCloser, response any) error {
+	if rc == nil {
+		return nil
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return err
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	return json.Unmarshal(data, &response)
+}
+
+type debuggingRoundTripper struct {
+	Transport http.RoundTripper
+}
+
+func (d *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	b, err := httputil.DumpRequestOut(req, true)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println("Request details:\n", string(b))
+
+	resp, err := d.Transport.RoundTrip(req)
+	if err != nil {
+		return resp, err
+	}
+
+	b, err = httputil.DumpResponse(resp, req.URL.Query().Get("watch") != "true")
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("Response details:\n", string(b))
+
+	return resp, err
 }
