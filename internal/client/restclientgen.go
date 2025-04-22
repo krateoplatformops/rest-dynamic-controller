@@ -10,7 +10,7 @@ import (
 	"net/http/httputil"
 	"strings"
 
-	"github.com/lucasepe/httplib"
+	// "github.com/lucasepe/httplib"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -58,15 +58,6 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		}
 	}
 
-	// if u.HasBasicAuth() && u.HasBearerToken() {
-	// 	return nil, fmt.Errorf("both basic auth and bearer token are set, only one is allowed")
-	// }
-	// if u.HasBasicAuth() {
-	// 	req.SetBasicAuth(u.Username, u.Password)
-	// } else if u.HasBearerToken() {
-	// 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", u.Token))
-	// }
-
 	if u.SetAuth != nil {
 		u.SetAuth(req)
 	}
@@ -75,13 +66,7 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 	if err != nil {
 		return nil, fmt.Errorf("error making request: %w", err)
 	}
-
 	defer resp.Body.Close()
-
-	err = handleResponse(resp.Body, &response)
-	if err != nil {
-		return nil, fmt.Errorf("error handling response: %w", err)
-	}
 
 	getDoc, ok := pathItem.GetOperations().Get(strings.ToLower(httpMethod))
 	if !ok {
@@ -93,7 +78,15 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 	}
 
 	if !HasValidStatusCode(resp.StatusCode, validStatusCodes...) {
-		return nil, fmt.Errorf("unexpected status code: %d - status: %s", resp.StatusCode, resp.Status)
+		return nil, &StatusError{
+			StatusCode: resp.StatusCode,
+			Inner:      fmt.Errorf("invalid status code: %d", resp.StatusCode),
+		}
+	}
+
+	err = handleResponse(resp.Body, &response)
+	if err != nil {
+		return nil, fmt.Errorf("error handling response: %w", err)
 	}
 
 	val, ok := response.(map[string]interface{})
@@ -129,7 +122,6 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 			if len(v) > 0 {
 				for _, item := range v {
 					if item, ok := item.(map[string]interface{}); ok {
-
 						for _, ide := range u.IdentifierFields {
 							idepath := strings.Split(ide, ".") // split the identifier field by '.'
 							responseValue, _, err := unstructured.NestedString(item, idepath...)
@@ -154,7 +146,10 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 			break
 		}
 	}
-	return nil, &httplib.StatusError{StatusCode: 404}
+	return nil, &StatusError{
+		StatusCode: http.StatusNotFound,
+		Inner:      fmt.Errorf("item not found"),
+	}
 }
 
 // buildPath constructs the URL path with the given parameters and query.
@@ -185,6 +180,10 @@ func (d *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 	}
 
 	fmt.Println("Request details:\n", string(b))
+
+	if d.Transport == nil {
+		d.Transport = http.DefaultTransport
+	}
 
 	resp, err := d.Transport.RoundTrip(req)
 	if err != nil {

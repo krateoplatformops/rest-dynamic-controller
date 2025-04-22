@@ -40,10 +40,10 @@ func APICallBuilder(cli *restclient.UnstructuredClient, info *getter.Info, actio
 	identifierFields := info.Resource.Identifiers
 	for _, descr := range info.Resource.VerbsDescription {
 		if strings.EqualFold(descr.Action, action.String()) {
-			method, err := restclient.StringToApiCallType(descr.Method)
-			if err != nil {
-				return nil, nil, fmt.Errorf("error converting method to api call type: %s", err)
-			}
+			// method, err := restclient.StringToApiCallType(descr.Method)
+			// if err != nil {
+			// 	return nil, nil, fmt.Errorf("error converting method to api call type: %s", err)
+			// }
 			params, query, err := cli.RequestedParams(descr.Method, descr.Path)
 			if err != nil {
 				return nil, nil, fmt.Errorf("error retrieving requested params: %s", err)
@@ -61,7 +61,7 @@ func APICallBuilder(cli *restclient.UnstructuredClient, info *getter.Info, actio
 
 			callInfo := &CallInfo{
 				Path:   descr.Path,
-				Method: method.String(),
+				Method: descr.Method,
 				ReqParams: &RequestedParams{
 					Parameters: params,
 					Query:      query,
@@ -395,7 +395,7 @@ func compareAny(a any, b any) (bool, error) {
 	}
 }
 
-func removeFinalizersAndUpdate(ctx context.Context, log logging.Logger, pluralizer pluralizer.Pluralizer, dynamic dynamic.Interface, mg *unstructured.Unstructured) error {
+func removeFinalizersAndUpdate(ctx context.Context, log logging.Logger, pluralizer pluralizer.PluralizerInterface, dynamic dynamic.Interface, mg *unstructured.Unstructured) error {
 	mg.SetFinalizers([]string{})
 	_, err := tools.Update(ctx, mg, tools.UpdateOptions{
 		Pluralizer:    pluralizer,

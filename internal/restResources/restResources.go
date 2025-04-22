@@ -4,11 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-
-	"github.com/gobuffalo/flect"
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/client"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/apiaction"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
@@ -17,12 +13,10 @@ import (
 	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured/condition"
-	"github.com/lucasepe/httplib"
 
 	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -30,7 +24,7 @@ import (
 
 var _ controller.ExternalClient = (*handler)(nil)
 
-func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter, pluralizer pluralizer.Pluralizer) controller.ExternalClient {
+func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter, pluralizer pluralizer.PluralizerInterface) controller.ExternalClient {
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		log.Debug("Creating dynamic client", "error", err)
@@ -51,7 +45,7 @@ func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter, plurali
 }
 
 type handler struct {
-	pluralizer        pluralizer.Pluralizer
+	pluralizer        pluralizer.PluralizerInterface
 	logger            logging.Logger
 	dynamicClient     dynamic.Interface
 	discoveryClient   *discovery.DiscoveryClient
@@ -59,6 +53,9 @@ type handler struct {
 }
 
 func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (controller.ExternalObservation, error) {
+	if mg == nil {
+		return controller.ExternalObservation{}, fmt.Errorf("custom resource is nil")
+	}
 	log := h.logger.WithValues("op", "Observe").
 		WithValues("apiVersion", mg.GetAPIVersion()).
 		WithValues("kind", mg.GetKind()).
@@ -124,7 +121,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
 		body, err = apiCall(ctx, http.DefaultClient, callInfo.Path, reqConfiguration)
-		if httplib.IsNotFoundError(err) {
+		if restclient.IsNotFoundError(err) {
 			log.Debug("External resource not found", "kind", mg.GetKind())
 			return controller.ExternalObservation{
 				ResourceExists:   false,
@@ -172,7 +169,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
 		body, err = apiCall(ctx, http.DefaultClient, callInfo.Path, reqConfiguration)
-		if httplib.IsNotFoundError(err) {
+		if restclient.IsNotFoundError(err) {
 			log.Debug("External resource not found", "kind", mg.GetKind())
 			return controller.ExternalObservation{}, nil
 		}
@@ -217,12 +214,9 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			unstructuredtools.SetConditions(mg, cond)
 			log.Debug("External resource not up-to-date", "kind", mg.GetKind())
 			return controller.ExternalObservation{
-					ResourceExists:   true,
-					ResourceUpToDate: false,
-				}, apierrors.NewNotFound(schema.GroupResource{
-					Group:    mg.GroupVersionKind().Group,
-					Resource: flect.Pluralize(strings.ToLower(mg.GetKind())),
-				}, mg.GetName())
+				ResourceExists:   true,
+				ResourceUpToDate: false,
+			}, nil
 		}
 	}
 	log.Debug("Setting condition", "kind", mg.GetKind())

@@ -201,7 +201,7 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 			}
 		}
 	}
-	return nil, nil
+	return nil, fmt.Errorf("no definitions found for '%v' in namespace: %s", gvr, un.GetNamespace())
 }
 
 func (g *dynamicGetter) setAuth(un *unstructured.Unstructured, info *Info) error {

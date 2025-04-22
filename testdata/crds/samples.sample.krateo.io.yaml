@@ -1,0 +1,143 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  generation: 1
+  name: samples.sample.krateo.io
+spec:
+  conversion:
+    strategy: None
+  group: sample.krateo.io
+  names:
+    categories:
+    - sample
+    kind: Sample
+    listKind: SampleList
+    plural: samples
+    singular: sample
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: AGE
+      type: date
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: READY
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          spec:
+            properties:
+              authenticationRefs:
+                description: AuthenticationRefs represent the reference to a CR containing
+                  the authentication information. One authentication method must be
+                  set.
+                properties:
+                  bearerAuthRef:
+                    type: string
+                type: object
+              name:
+                type: string
+              description:
+                type: string
+            required:
+            - authenticationRefs
+            type: object
+          status:
+            properties:
+              conditions:
+                description: Conditions of the resource.
+                items:
+                  description: A Condition that may apply to a resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        LastTransitionTime is the last time this condition transitioned from one
+                        status to another.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        A Message containing details about this condition's last transition from
+                        one status to another, if any.
+                      type: string
+                    reason:
+                      description: A Reason for this condition's last transition from
+                        one status to another.
+                      type: string
+                    status:
+                      description: Status of this condition; is it currently True,
+                        False, or Unknown?
+                      type: string
+                    type:
+                      description: |-
+                        Type of this condition. At most one of each condition type may apply to
+                        a resource at any point in time.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              failedObjectRef:
+                properties:
+                  apiVersion:
+                    description: API version of the object.
+                    type: string
+                  kind:
+                    description: Kind of the object.
+                    type: string
+                  name:
+                    description: Name of the object.
+                    type: string
+                  namespace:
+                    description: Namespace of the object.
+                    type: string
+                type: object
+              name:
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    categories:
+    - sample
+    kind: Sample
+    listKind: SampleList
+    plural: samples
+    singular: sample
+  conditions:
+  - lastTransitionTime: "2025-04-22T10:54:33Z"
+    message: no conflicts found
+    reason: NoConflicts
+    status: "True"
+    type: NamesAccepted
+  - lastTransitionTime: "2025-04-22T10:54:33Z"
+    message: the initial names have been accepted
+    reason: InitialNamesAccepted
+    status: "True"
+    type: Established
+  storedVersions:
+  - v1alpha1
