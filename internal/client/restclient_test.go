@@ -91,7 +91,7 @@ func TestCallWithRecorder(t *testing.T) {
 			opts: &RequestConfiguration{
 				Method: "GET",
 			},
-			expectedError: "unexpected status code: 400",
+			expectedError: "unexpected status: 400: invalid status code: 400",
 		},
 		{
 			name: "successful GET with basic auth",
@@ -157,7 +157,7 @@ func TestCallWithRecorder(t *testing.T) {
 				}
 
 			},
-			expectedError: "unexpected status code: 401",
+			expectedError: "unexpected status: 401: invalid status code: 401",
 		},
 	}
 
