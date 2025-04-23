@@ -79,18 +79,18 @@ func TestMain(m *testing.M) {
 		e2e.CreateNamespace(altNamespace),
 		func(ctx context.Context, cfg *envconf.Config) (context.Context, error) {
 
-			// err := decoder.ApplyWithManifestDir(ctx, cfg.Client().Resources(), manifestsPath, "ws-deployment.yaml", nil)
-			// if err != nil {
-			// 	return ctx, err
-			// }
+			err := decoder.ApplyWithManifestDir(ctx, cfg.Client().Resources(), manifestsPath, "ws-deployment.yaml", nil)
+			if err != nil {
+				return ctx, err
+			}
 
-			// time.Sleep(30 * time.Second)
+			time.Sleep(30 * time.Second)
 
 			return ctx, nil
 		},
 	).Finish(
-	// envfuncs.DeleteNamespace(namespace),
-	// envfuncs.DestroyCluster(clusterName),
+		envfuncs.DeleteNamespace(namespace),
+		envfuncs.DestroyCluster(clusterName),
 	)
 
 	os.Exit(testenv.Run(m))
@@ -110,31 +110,31 @@ func TestController(t *testing.T) {
 				return ctx
 			}
 
-			// err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "crds"), "*.yaml", nil)
-			// if err != nil {
-			// 	t.Error("Applying crds manifests.", "error", err)
-			// 	return ctx
-			// }
+			err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "crds"), "*.yaml", nil)
+			if err != nil {
+				t.Error("Applying crds manifests.", "error", err)
+				return ctx
+			}
 
-			// time.Sleep(2 * time.Second)
+			time.Sleep(2 * time.Second)
 
-			err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "rest"), "sample.yaml", nil, decoder.MutateNamespace(namespace))
+			err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "rest"), "*.yaml", nil, decoder.MutateNamespace(namespace))
 			if err != nil {
 				t.Error("Applying rest manifests.", "error", err)
 				return ctx
 			}
 
-			// err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "restdefinitions", "cm"), "*.yaml", nil, decoder.MutateNamespace(namespace))
-			// if err != nil {
-			// 	t.Error("Applying configmap manifests.", "error", err)
-			// 	return ctx
-			// }
+			err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "restdefinitions", "cm"), "*.yaml", nil, decoder.MutateNamespace(namespace))
+			if err != nil {
+				t.Error("Applying configmap manifests.", "error", err)
+				return ctx
+			}
 
-			// err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "restdefinitions"), "*.yaml", nil, decoder.MutateNamespace(namespace))
-			// if err != nil {
-			// 	t.Error("Applying restdefinition manifests.", "error", err)
-			// 	return ctx
-			// }
+			err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "restdefinitions"), "*.yaml", nil, decoder.MutateNamespace(namespace))
+			if err != nil {
+				t.Error("Applying restdefinition manifests.", "error", err)
+				return ctx
+			}
 
 			zl := zap.New(zap.UseDevMode(true))
 			log := logging.NewLogrLogger(zl.WithName("rest-controller-test"))
@@ -411,6 +411,12 @@ func TestController(t *testing.T) {
 		ctx, err = handleObservation(t, ctx, handler, observation, u)
 		if err != nil {
 			t.Error("Handling observation.", "error", err)
+			return ctx
+		}
+
+		u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting Rest Resource.", "error", err)
 			return ctx
 		}
 
