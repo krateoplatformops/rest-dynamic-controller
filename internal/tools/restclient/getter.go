@@ -69,10 +69,6 @@ type Info struct {
 	Resource Resource `json:"resources,omitempty"`
 
 	SetAuth func(req *http.Request)
-
-	// Token    string `json:"token,omitempty"`
-	// Username string `json:"username,omitempty"`
-	// Password string `json:"password,omitempty"`
 }
 
 type Getter interface {

@@ -40,10 +40,6 @@ func APICallBuilder(cli *restclient.UnstructuredClient, info *getter.Info, actio
 	identifierFields := info.Resource.Identifiers
 	for _, descr := range info.Resource.VerbsDescription {
 		if strings.EqualFold(descr.Action, action.String()) {
-			// method, err := restclient.StringToApiCallType(descr.Method)
-			// if err != nil {
-			// 	return nil, nil, fmt.Errorf("error converting method to api call type: %s", err)
-			// }
 			params, query, err := cli.RequestedParams(descr.Method, descr.Path)
 			if err != nil {
 				return nil, nil, fmt.Errorf("error retrieving requested params: %s", err)

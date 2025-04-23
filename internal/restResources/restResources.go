@@ -102,9 +102,9 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	if err != nil {
 		log.Debug("Error getting status.", "error", err)
 	}
+
 	var body any
 	isKnown := isResourceKnown(cli, log, clientInfo, statusFields, specFields)
-
 	if isKnown {
 		// Getting the external resource by its identifier
 		apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Get)
@@ -453,7 +453,8 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Delete)
 	if apiCall == nil {
 		log.Debug("API call not found", "action", apiaction.Delete)
-		return removeFinalizersAndUpdate(ctx, log, h.pluralizer, h.dynamicClient, mg)
+		// return removeFinalizersAndUpdate(ctx, log, h.pluralizer, h.dynamicClient, mg)
+		return nil
 	}
 	if err != nil {
 		log.Debug("Building API call", "error", err)
@@ -478,5 +479,6 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	return removeFinalizersAndUpdate(ctx, log, h.pluralizer, h.dynamicClient, mg)
+	// return removeFinalizersAndUpdate(ctx, log, h.pluralizer, h.dynamicClient, mg)
+	return nil
 }
