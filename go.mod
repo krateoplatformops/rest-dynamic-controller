@@ -8,7 +8,6 @@ require (
 	github.com/gobuffalo/flect v1.0.3
 	github.com/krateoplatformops/snowplow v0.0.0-20250311104630-6e215130151f
 	github.com/krateoplatformops/unstructured-runtime v0.1.2
-	github.com/lucasepe/httplib v0.2.2
 	github.com/pb33f/libopenapi v0.16.8
 	github.com/rs/zerolog v1.33.0
 	github.com/stretchr/testify v1.10.0

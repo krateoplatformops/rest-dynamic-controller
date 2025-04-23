@@ -26,40 +26,6 @@ import (
 
 type APICallType string
 
-const (
-	APICallsTypeGet    APICallType = "get"
-	APICallsTypePost   APICallType = "post"
-	APICallsTypeList   APICallType = "list"
-	APICallsTypeDelete APICallType = "delete"
-	APICallsTypePatch  APICallType = "patch"
-	APICallsTypeFindBy APICallType = "findby"
-	APICallsTypePut    APICallType = "put"
-)
-
-func (a APICallType) String() string {
-	return string(a)
-}
-func StringToApiCallType(ty string) (APICallType, error) {
-	ty = strings.ToLower(ty)
-	switch ty {
-	case "get":
-		return APICallsTypeGet, nil
-	case "post":
-		return APICallsTypePost, nil
-	case "list":
-		return APICallsTypeList, nil
-	case "delete":
-		return APICallsTypeDelete, nil
-	case "patch":
-		return APICallsTypePatch, nil
-	case "findby":
-		return APICallsTypeFindBy, nil
-	case "put":
-		return APICallsTypePut, nil
-	}
-	return "", fmt.Errorf("unknown api call type: %s", ty)
-}
-
 type AuthType string
 
 const (
