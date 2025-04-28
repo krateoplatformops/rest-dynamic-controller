@@ -74,7 +74,7 @@ func TestCallWithRecorder(t *testing.T) {
 			path: "/api/test",
 			opts: &RequestConfiguration{
 				Method: "POST",
-				Body:   map[string]string{"name": "test"},
+				Body:   map[string]interface{}{"name": "test"},
 			},
 			expected: map[string]interface{}{"id": "123"},
 		},
@@ -129,7 +129,7 @@ func TestCallWithRecorder(t *testing.T) {
 			path: "/api/test",
 			opts: &RequestConfiguration{
 				Method: "POST",
-				Body:   map[string]string{"name": "test"},
+				Body:   map[string]interface{}{"name": "test"},
 			},
 			clientSetup: func(c *UnstructuredClient) {
 				c.SetAuth = func(req *http.Request) {

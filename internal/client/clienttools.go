@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
+	pathutil "path"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -61,13 +61,13 @@ func buildPath(baseUrl string, path string, parameters map[string]string, query 
 	if err != nil {
 		return nil
 	}
-	parsed.Path = parsed.Path + path
+
+	parsed.Path = pathutil.Join(parsed.Path, path)
 	parsed.RawQuery = params.Encode()
 	return parsed
 }
 
 func getValidResponseCode(codes *orderedmap.Map[string, *v3.Response]) ([]int, error) {
-
 	var validCodes []int
 	for code := codes.First(); code != nil; code = code.Next() {
 		icode, err := strconv.Atoi(code.Key())
@@ -88,29 +88,16 @@ type UnstructuredClient struct {
 	DocScheme        *libopenapi.DocumentModel[v3.Document]
 	Server           string
 	Debug            bool
-
-	// Token    string
-	// Username string
-	// Password string
-
-	SetAuth func(req *http.Request)
+	SetAuth          func(req *http.Request)
 }
 
 type RequestConfiguration struct {
 	Parameters map[string]string
 	Query      map[string]string
-	Body       interface{}
+	Body       any
 	Method     string
 }
 
-// func (u *UnstructuredClient) HasBasicAuth() bool {
-// 	return len(u.Username) > 0 && len(u.Password) > 0
-// }
-// func (u *UnstructuredClient) HasBearerToken() bool {
-// 	return len(u.Token) > 0
-// }
-
-// 'field' could be in the format of 'spec.field1.field2'
 func (u *UnstructuredClient) isInSpecFields(field, value string) (bool, error) {
 	fields := strings.Split(field, ".")
 	specs, err := unstructuredtools.GetFieldsFromUnstructured(u.SpecFields, "spec")
@@ -256,7 +243,7 @@ func BuildClient(ctx context.Context, kubeclient dynamic.Interface, swaggerPath 
 	}
 
 	fgetter := &fgetter.Filegetter{
-		Client:     http.DefaultClient,
+		Client:     &http.Client{},
 		KubeClient: kubeclient,
 	}
 
@@ -265,7 +252,7 @@ func BuildClient(ctx context.Context, kubeclient dynamic.Interface, swaggerPath 
 		return nil, fmt.Errorf("failed to download file: %w", err)
 	}
 
-	contents, _ := os.ReadFile(filepath.Join(basePath, path.Base(swaggerPath)))
+	contents, _ := os.ReadFile(filepath.Join(basePath, pathutil.Base(swaggerPath)))
 	d, err := libopenapi.NewDocument(contents)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)

@@ -2,7 +2,7 @@ kind: Sample
 apiVersion: sample.krateo.io/v1alpha1
 metadata:
   name: sample-1
-  namespace: demo-system 
+  namespace: default
   annotations:
     krateo.io/connector-verbose: "true"
 spec:

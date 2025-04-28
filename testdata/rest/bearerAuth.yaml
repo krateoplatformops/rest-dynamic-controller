@@ -3,12 +3,12 @@ kind: BearerAuth
 apiVersion: sample.krateo.io/v1alpha1
 metadata:
   name: sample-auth-sec
-  namespace: demo-system 
+  namespace: default
   annotations:
     krateo.io/connector-verbose: "true"
 spec:
   tokenRef:
     key: token
     name: sample-auth-sec
-    namespace: demo-system
+    namespace: default
 

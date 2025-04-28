@@ -123,7 +123,7 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 	}
 
 	all, err := g.dynamicClient.Resource(gvrForDefinitions).
-		Namespace(un.GetNamespace()).
+		// Namespace(un.GetNamespace()).
 		List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("error getting definitions for '%v' in namespace: %s - %w", gvr.String(), un.GetNamespace(), err)

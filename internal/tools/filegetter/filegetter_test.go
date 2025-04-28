@@ -174,7 +174,7 @@ func TestGetFile(t *testing.T) {
 			dst := filepath.Join(tempDir, "destination.txt")
 
 			filegetter := &Filegetter{
-				Client:     http.DefaultClient,
+				Client:     &http.Client{},
 				KubeClient: kubeClient,
 			}
 

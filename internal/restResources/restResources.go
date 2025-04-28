@@ -120,7 +120,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		if reqConfiguration == nil {
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
-		body, err = apiCall(ctx, http.DefaultClient, callInfo.Path, reqConfiguration)
+		body, err = apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 		if restclient.IsNotFoundError(err) {
 			log.Debug("External resource not found", "kind", mg.GetKind())
 			return controller.ExternalObservation{
@@ -168,7 +168,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Building call configuration", "error", "error building call configuration")
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
-		body, err = apiCall(ctx, http.DefaultClient, callInfo.Path, reqConfiguration)
+		body, err = apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 		if restclient.IsNotFoundError(err) {
 			log.Debug("External resource not found", "kind", mg.GetKind())
 			return controller.ExternalObservation{}, nil
@@ -278,7 +278,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 	reqConfiguration := BuildCallConfig(callInfo, nil, specFields)
-	body, err := apiCall(ctx, http.DefaultClient, callInfo.Path, reqConfiguration)
+	body, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
 		log.Debug("Performing REST call", "error", err)
 		return err
@@ -364,7 +364,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 	reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)
-	body, err := apiCall(ctx, http.DefaultClient, callInfo.Path, reqConfiguration)
+	body, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
 		log.Debug("Performing REST call", "error", err)
 		return err
@@ -465,7 +465,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("error building call configuration")
 	}
 
-	_, err = apiCall(ctx, http.DefaultClient, callInfo.Path, reqConfiguration)
+	_, err = apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
 		log.Debug("Performing REST call", "error", err)
 		return err

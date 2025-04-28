@@ -8,9 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httputil"
+	"os"
 	"strings"
 
-	// "github.com/lucasepe/httplib"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -30,17 +30,19 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 	var response any
 
 	var payload []byte
-	var headers http.Header
-	if opts.Body == nil {
-		payload = nil
-		headers = make(http.Header)
-	} else {
+
+	headers := make(http.Header)
+	payload = nil
+	m, ok := opts.Body.(map[string]any)
+	if !ok && opts.Body != nil {
+		return nil, fmt.Errorf("invalid body type: %T", opts.Body)
+	}
+	if len(m) != 0 {
 		jsonBody, err := json.Marshal(opts.Body)
 		if err != nil {
 			return nil, err
 		}
 		payload = jsonBody
-		headers = make(http.Header)
 		headers.Set("Content-Type", "application/json")
 	}
 
@@ -55,6 +57,7 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 	if u.Debug {
 		cli.Transport = &debuggingRoundTripper{
 			Transport: cli.Transport,
+			Out:       os.Stdout,
 		}
 	}
 
@@ -171,6 +174,7 @@ func handleResponse(rc io.ReadCloser, response any) error {
 
 type debuggingRoundTripper struct {
 	Transport http.RoundTripper
+	Out       io.Writer
 }
 
 func (d *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -179,7 +183,8 @@ func (d *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 		return nil, err
 	}
 
-	fmt.Println("Request details:\n", string(b))
+	d.Out.Write(b)
+	d.Out.Write([]byte{'\n'})
 
 	if d.Transport == nil {
 		d.Transport = http.DefaultTransport
@@ -194,7 +199,8 @@ func (d *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("Response details:\n", string(b))
+	d.Out.Write(b)
+	d.Out.Write([]byte{'\n'})
 
 	return resp, err
 }

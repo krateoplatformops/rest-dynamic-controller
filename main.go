@@ -52,7 +52,7 @@ func main() {
 	resourceName := flag.String("resource",
 		env.String("REST_CONTROLLER_RESOURCE", ""), "resource plural name")
 	namespace := flag.String("namespace",
-		env.String("REST_CONTROLLER_NAMESPACE", "default"), "namespace")
+		env.String("REST_CONTROLLER_NAMESPACE", ""), "namespace to watch, empty for all namespaces")
 	urlplurals := flag.String("urlplurals",
 		env.String("URL_PLURALS", "http://snowplow.krateo-system.svc.cluster.local:8081/api-info/names"), "url plurals")
 	maxErrorRetryInterval := flag.Duration("max-error-retry-interval",
@@ -96,7 +96,7 @@ func main() {
 
 	var handler controller.ExternalClient
 
-	pluralizer := pluralizer.New(urlplurals, http.DefaultClient)
+	pluralizer := pluralizer.New(urlplurals, &http.Client{})
 	var swg getter.Getter
 	swg, err = getter.Dynamic(cfg, pluralizer)
 	if err != nil {
@@ -109,6 +109,11 @@ func main() {
 		WithValues("group", *resourceGroup).
 		WithValues("version", *resourceVersion).
 		WithValues("resource", *resourceName).
+		WithValues("namespace", *namespace).
+		WithValues("urlplurals", *urlplurals).
+		WithValues("maxErrorRetryInterval", *maxErrorRetryInterval).
+		WithValues("minErrorRetryInterval", *minErrorRetryInterval).
+		WithValues("workers", *workers).
 		Info("Starting.", "serviceName", serviceName)
 
 	handler = restResources.NewHandler(cfg, log, swg, *pluralizer)

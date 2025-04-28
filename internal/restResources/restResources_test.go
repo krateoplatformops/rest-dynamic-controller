@@ -118,7 +118,7 @@ func TestController(t *testing.T) {
 
 			time.Sleep(2 * time.Second)
 
-			err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "rest"), "*.yaml", nil, decoder.MutateNamespace(namespace))
+			err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "rest"), "*.yaml", nil)
 			if err != nil {
 				t.Error("Applying rest manifests.", "error", err)
 				return ctx
@@ -181,7 +181,7 @@ func TestController(t *testing.T) {
 			return ctx
 		}
 
-		httpcli := http.DefaultClient
+		httpcli := &http.Client{}
 		resp, err := httpcli.Do(&http.Request{
 			Method: http.MethodGet,
 			URL: &url.URL{
@@ -298,7 +298,7 @@ func TestController(t *testing.T) {
 			return ctx
 		}
 
-		httpcli := http.DefaultClient
+		httpcli := &http.Client{}
 		resp, err := httpcli.Do(&http.Request{
 			Method: http.MethodGet,
 			URL: &url.URL{
@@ -427,7 +427,7 @@ func TestController(t *testing.T) {
 			return ctx
 		}
 
-		httpcli := http.DefaultClient
+		httpcli := &http.Client{}
 		resp, err := httpcli.Do(&http.Request{
 			Method: http.MethodGet,
 			URL: &url.URL{
