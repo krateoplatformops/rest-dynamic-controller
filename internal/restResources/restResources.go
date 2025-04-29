@@ -2,6 +2,7 @@ package restResources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -23,6 +24,10 @@ import (
 )
 
 var _ controller.ExternalClient = (*handler)(nil)
+
+var (
+	ErrStatusNotFound = errors.New("status not found")
+)
 
 func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter, pluralizer pluralizer.PluralizerInterface) controller.ExternalClient {
 	dyn, err := dynamic.NewForConfig(cfg)
@@ -359,7 +364,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
-	if err == fmt.Errorf("%s not found", "status") {
+	if err == ErrStatusNotFound {
 		log.Debug("External resource not created yet", "kind", mg.GetKind())
 		return err
 	}
@@ -446,6 +451,15 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
+	if err == ErrStatusNotFound {
+		log.Debug("External resource not created yet", "kind", mg.GetKind())
+		log.Debug("Remote resource is assumed to not exist, deleting CR")
+		err = unstructuredtools.SetConditions(mg, condition.Deleting())
+		if err != nil {
+			log.Debug("Setting condition", "error", err)
+		}
+		return nil
+	}
 	if err != nil {
 		log.Debug("Getting status", "error", err)
 		return err
@@ -453,7 +467,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Delete)
 	if apiCall == nil {
 		log.Debug("API call not found", "action", apiaction.Delete)
-		// return removeFinalizersAndUpdate(ctx, log, h.pluralizer, h.dynamicClient, mg)
+		log.Debug("Remote resource cannot be deleted, deleting CR")
 		return nil
 	}
 	if err != nil {
@@ -479,6 +493,5 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	// return removeFinalizersAndUpdate(ctx, log, h.pluralizer, h.dynamicClient, mg)
 	return nil
 }
