@@ -1,0 +1,51 @@
+apiVersion: swaggergen.krateo.io/v1alpha1
+kind: RestDefinition
+metadata:
+  annotations:
+    krateo.io/external-create-pending: "2025-04-22T10:49:15Z"
+    krateo.io/external-create-succeeded: "2025-04-22T10:49:24Z"
+  creationTimestamp: "2025-04-22T10:45:08Z"
+  finalizers:
+  - finalizer.managedresource.krateo.io
+  generation: 2
+  name: sample
+  namespace: demo-system
+  resourceVersion: "35556"
+  uid: 35709b8b-fd64-4690-a631-f949a791f824
+spec:
+  oasPath: configmap://demo-system/sample/openapi.yaml
+  resource:
+    identifiers:
+    - name
+    kind: Sample
+    verbsDescription:
+    - action: create
+      method: POST
+      path: /resource
+    - action: delete
+      method: DELETE
+      path: /resource
+    - action: get
+      method: GET
+      path: /resource
+    - action: findby
+      method: GET
+      path: /resources
+    - action: update
+      method: PATCH
+      path: /resource
+  resourceGroup: sample.krateo.io
+status:
+  conditions:
+  - lastTransitionTime: "2025-04-22T10:49:24Z"
+    reason: ReconcileSuccess
+    status: "True"
+    type: Synced
+  - lastTransitionTime: "2025-04-22T10:49:25Z"
+    reason: Available
+    status: "True"
+    type: Ready
+  oasPath: configmap://demo-system/sample/openapi.yaml
+  resource:
+    apiVersion: sample.krateo.io/v1alpha1
+    kind: Sample

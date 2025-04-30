@@ -7,55 +7,24 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
+	pathutil "path"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 
 	stringset "github.com/krateoplatformops/rest-dynamic-controller/internal/text"
 	fgetter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/filegetter"
+	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	"github.com/pb33f/libopenapi"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 	orderedmap "github.com/pb33f/libopenapi/orderedmap"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 )
 
 type APICallType string
-
-const (
-	APICallsTypeGet    APICallType = "get"
-	APICallsTypePost   APICallType = "post"
-	APICallsTypeList   APICallType = "list"
-	APICallsTypeDelete APICallType = "delete"
-	APICallsTypePatch  APICallType = "patch"
-	APICallsTypeFindBy APICallType = "findby"
-	APICallsTypePut    APICallType = "put"
-)
-
-func (a APICallType) String() string {
-	return string(a)
-}
-func StringToApiCallType(ty string) (APICallType, error) {
-	ty = strings.ToLower(ty)
-	switch ty {
-	case "get":
-		return APICallsTypeGet, nil
-	case "post":
-		return APICallsTypePost, nil
-	case "list":
-		return APICallsTypeList, nil
-	case "delete":
-		return APICallsTypeDelete, nil
-	case "patch":
-		return APICallsTypePatch, nil
-	case "findby":
-		return APICallsTypeFindBy, nil
-	case "put":
-		return APICallsTypePut, nil
-	}
-	return "", fmt.Errorf("unknown api call type: %s", ty)
-}
 
 type AuthType string
 
@@ -77,10 +46,6 @@ func ToType(ty string) (AuthType, error) {
 	return "", fmt.Errorf("unknown auth type: %s", ty)
 }
 
-func (e *APIError) Error() string {
-	return fmt.Sprintf("error: %s (%s, %d)", e.Message, e.TypeKey, e.EventID)
-}
-
 func buildPath(baseUrl string, path string, parameters map[string]string, query map[string]string) *url.URL {
 	for key, param := range parameters {
 		path = strings.Replace(path, fmt.Sprintf("{%s}", key), fmt.Sprintf("%v", param), 1)
@@ -96,13 +61,13 @@ func buildPath(baseUrl string, path string, parameters map[string]string, query 
 	if err != nil {
 		return nil
 	}
-	parsed.Path = parsed.Path + path
+
+	parsed.Path = pathutil.Join(parsed.Path, path)
 	parsed.RawQuery = params.Encode()
 	return parsed
 }
 
 func getValidResponseCode(codes *orderedmap.Map[string, *v3.Response]) ([]int, error) {
-
 	var validCodes []int
 	for code := codes.First(); code != nil; code = code.Next() {
 		icode, err := strconv.Atoi(code.Key())
@@ -115,6 +80,43 @@ func getValidResponseCode(codes *orderedmap.Map[string, *v3.Response]) ([]int, e
 		}
 	}
 	return validCodes, nil
+}
+
+type UnstructuredClient struct {
+	IdentifierFields []string
+	SpecFields       *unstructured.Unstructured
+	DocScheme        *libopenapi.DocumentModel[v3.Document]
+	Server           string
+	Debug            bool
+	SetAuth          func(req *http.Request)
+}
+
+type RequestConfiguration struct {
+	Parameters map[string]string
+	Query      map[string]string
+	Body       any
+	Method     string
+}
+
+func (u *UnstructuredClient) isInSpecFields(field, value string) (bool, error) {
+	fields := strings.Split(field, ".")
+	specs, err := unstructuredtools.GetFieldsFromUnstructured(u.SpecFields, "spec")
+	if err != nil {
+		return false, fmt.Errorf("error getting fields from unstructured: %w", err)
+	}
+
+	val, ok, err := unstructured.NestedFieldCopy(specs, fields...)
+	if err != nil {
+		return false, fmt.Errorf("error getting nested field: %w", err)
+	}
+	if !ok {
+		return false, nil
+	}
+	if reflect.DeepEqual(val, value) {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 func (u *UnstructuredClient) ValidateRequest(httpMethod string, path string, parameters map[string]string, query map[string]string) error {
@@ -169,18 +171,6 @@ func (u *UnstructuredClient) RequestedBody(httpMethod string, path string) (body
 	for sch := schema.Properties.First(); sch != nil; sch = sch.Next() {
 		bodyParams.Add(sch.Key())
 	}
-
-	// for _, proxy := range schema.AllOf {
-	// 	propSchema, err := proxy.BuildSchema()
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("building schema for %s: %w", path, err)
-	// 	}
-	// 	// Iterate over the properties of the schema with First() and Next()
-	// 	for prop := propSchema.Properties.First(); prop != nil; prop = prop.Next() {
-	// 		// Add the property to the schema
-	// 		bodyParams.Add(prop.Key())
-	// 	}
-	// }
 
 	return bodyParams, nil
 }
@@ -253,7 +243,7 @@ func BuildClient(ctx context.Context, kubeclient dynamic.Interface, swaggerPath 
 	}
 
 	fgetter := &fgetter.Filegetter{
-		Client:     http.DefaultClient,
+		Client:     &http.Client{},
 		KubeClient: kubeclient,
 	}
 
@@ -262,7 +252,7 @@ func BuildClient(ctx context.Context, kubeclient dynamic.Interface, swaggerPath 
 		return nil, fmt.Errorf("failed to download file: %w", err)
 	}
 
-	contents, _ := os.ReadFile(filepath.Join(basePath, path.Base(swaggerPath)))
+	contents, _ := os.ReadFile(filepath.Join(basePath, pathutil.Base(swaggerPath)))
 	d, err := libopenapi.NewDocument(contents)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
@@ -292,6 +282,5 @@ func BuildClient(ctx context.Context, kubeclient dynamic.Interface, swaggerPath 
 	return &UnstructuredClient{
 		Server:    doc.Model.Servers[0].URL,
 		DocScheme: doc,
-		Auth:      nil,
 	}, nil
 }

@@ -99,8 +99,7 @@ func (cli *Filegetter) GetFile(ctx context.Context, dst string, src string, auth
 			return fmt.Errorf("error getting configmap: %v", err)
 		}
 
-		runtime.DefaultUnstructuredConverter.FromUnstructured(uns.Object, &cm)
-
+		err = runtime.DefaultUnstructuredConverter.FromUnstructured(uns.Object, &cm)
 		if err != nil {
 			return fmt.Errorf("error getting configmap: %v", err)
 		}

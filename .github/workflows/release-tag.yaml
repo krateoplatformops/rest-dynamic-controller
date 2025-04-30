@@ -22,8 +22,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     
     permissions:
-      contents: read
+      contents: write
       packages: write
+      pull-requests: write
 
     steps:
       - name: Prepare
@@ -110,6 +111,12 @@ jobs:
       - name: Inspect image
         run: |
           docker buildx imagetools inspect ${{ env.GHCR_REPO }}:${{ steps.meta.outputs.version }}
+
+      - uses: googleapis/release-please-action@v4
+        with:
+          # this is a built-in strategy in release-please, see "Action Inputs"
+          # for more options
+          release-type: simple
 
   test:
     runs-on: ubuntu-latest
