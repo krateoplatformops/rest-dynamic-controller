@@ -48,13 +48,14 @@ func ToType(ty string) (AuthType, error) {
 
 func buildPath(baseUrl string, path string, parameters map[string]string, query map[string]string) *url.URL {
 	for key, param := range parameters {
-		path = strings.Replace(path, fmt.Sprintf("{%s}", key), fmt.Sprintf("%v", param), 1)
+		param = url.PathEscape(param)
+		path = strings.Replace(path, fmt.Sprintf("{%s}", key), param, 1)
 	}
 
 	params := url.Values{}
-
 	for key, param := range query {
-		params.Add(key, param)
+		queryParam := url.QueryEscape(param)
+		params.Add(key, queryParam)
 	}
 
 	parsed, err := url.Parse(baseUrl)
@@ -62,11 +63,15 @@ func buildPath(baseUrl string, path string, parameters map[string]string, query 
 		return nil
 	}
 
-	parsed.Path = pathutil.Join(parsed.Path, path)
+	// Remove trailing slash from base path if present
+	parsed.Opaque = "//" + pathutil.Join(parsed.Host, parsed.Path, path)
 	parsed.RawQuery = params.Encode()
+	parsed, err = url.Parse(parsed.String())
+	if err != nil {
+		return nil
+	}
 	return parsed
 }
-
 func getValidResponseCode(codes *orderedmap.Map[string, *v3.Response]) ([]int, error) {
 	var validCodes []int
 	for code := codes.First(); code != nil; code = code.Next() {

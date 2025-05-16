@@ -7,6 +7,30 @@ servers:
     description: Test server
 
 paths:
+  /api/test/{id}:
+    get:
+      summary: Get test data by ID
+      operationId: getTestById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+        '404':
+          description: Not found
   /api/test:
     get:
       summary: Get test data
