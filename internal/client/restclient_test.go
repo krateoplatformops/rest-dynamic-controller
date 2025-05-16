@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"testing"
 
@@ -42,6 +43,25 @@ func TestCallWithRecorder(t *testing.T) {
 		expected      interface{}
 		expectedError string
 	}{
+		{
+			name: "path with slash in path parameter",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "GET", r.Method)
+				r.URL, _ = url.Parse(r.URL.String())
+				assert.Equal(t, "/api/test/123%2F456", r.URL.Path)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{"message": "success"})
+			},
+			path: "/api/test/{id}",
+			opts: &RequestConfiguration{
+				Method: "GET",
+				Parameters: map[string]string{
+					"id": "123%2F456",
+				},
+			},
+			expected: map[string]interface{}{"message": "success"},
+		},
 		{
 			name: "successful GET request",
 			handler: func(w http.ResponseWriter, r *http.Request) {

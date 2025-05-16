@@ -61,6 +61,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	if mg == nil {
 		return controller.ExternalObservation{}, fmt.Errorf("custom resource is nil")
 	}
+
 	log := h.logger.WithValues("op", "Observe").
 		WithValues("apiVersion", mg.GetAPIVersion()).
 		WithValues("kind", mg.GetKind()).
