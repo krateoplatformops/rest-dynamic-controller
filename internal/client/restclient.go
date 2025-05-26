@@ -29,9 +29,8 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		}
 
 		if len(op.Servers) > 0 {
-			if len(op.Servers) > 1 {
-				uri = buildPath(op.Servers[0].URL, path, opts.Parameters, opts.Query)
-			}
+			server := op.Servers[0]
+			uri = buildPath(server.URL, path, opts.Parameters, opts.Query)
 		}
 	}
 
