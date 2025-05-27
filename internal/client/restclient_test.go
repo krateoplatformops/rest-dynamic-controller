@@ -42,6 +42,7 @@ func TestCallWithRecorder(t *testing.T) {
 		clientSetup   func(*UnstructuredClient)
 		expected      interface{}
 		expectedError string
+		expectedURL   string
 	}{
 		{
 			name: "path with slash in path parameter",
@@ -179,6 +180,26 @@ func TestCallWithRecorder(t *testing.T) {
 			},
 			expectedError: "unexpected status: 401: invalid status code: 401",
 		},
+		{
+			name: "server override in operation",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				// Verify that the request is using the override server URL
+				// The mock transport doesn't actually change the host, but we can verify
+				// the path and that the request was made
+				assert.Equal(t, "GET", r.Method)
+				assert.Equal(t, "/api/override", r.URL.Path)
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{"message": "override success"})
+			},
+			path: "/api/override",
+			opts: &RequestConfiguration{
+				Method: "GET",
+			},
+			expected:    map[string]interface{}{"message": "override success"},
+			expectedURL: "http://override.example.com/api/override",
+		},
 	}
 
 	for _, tt := range tests {
@@ -186,6 +207,11 @@ func TestCallWithRecorder(t *testing.T) {
 			// Create our mock transport that uses the ResponseRecorder
 			mockTransport := &mockTransport{
 				handler: tt.handler,
+			}
+
+			// If we need to verify the URL (we set the field in the test case), capture it
+			if tt.expectedURL != "" {
+				mockTransport.capturedURL = ""
 			}
 
 			// Create test client
@@ -199,6 +225,11 @@ func TestCallWithRecorder(t *testing.T) {
 
 			// Call the method under test
 			result, err := client.Call(context.Background(), testClient, tt.path, tt.opts)
+
+			// Verify the URL if expected, if we set the field in the test case
+			if tt.expectedURL != "" {
+				assert.Equal(t, tt.expectedURL, mockTransport.capturedURL)
+			}
 
 			if tt.expectedError != "" {
 				require.Error(t, err)
@@ -227,10 +258,16 @@ func TestCallWithRecorder(t *testing.T) {
 
 // mockTransport implements http.RoundTripper using a ResponseRecorder
 type mockTransport struct {
-	handler http.HandlerFunc
+	handler     http.HandlerFunc
+	capturedURL string
 }
 
 func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Capture the full URL for verification
+	if m.capturedURL == "" {
+		m.capturedURL = req.URL.String()
+	}
+
 	// Create a ResponseRecorder
 	rr := httptest.NewRecorder()
 

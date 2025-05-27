@@ -141,6 +141,26 @@ paths:
                 items:
                   $ref: '#/components/schemas/Item'
 
+  /api/override:
+    get:
+      summary: Test endpoint with server override
+      operationId: getOverride
+      servers:
+        - url: http://override.example.com
+          description: Override server
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          description: Not found
+
 components:
   schemas:
     User:
