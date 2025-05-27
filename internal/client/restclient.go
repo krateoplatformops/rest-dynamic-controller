@@ -21,6 +21,18 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		return nil, fmt.Errorf("path not found: %s", path)
 	}
 	httpMethod := string(opts.Method)
+	ops := pathItem.GetOperations()
+	if ops != nil {
+		op, ok := ops.Get(strings.ToLower(httpMethod))
+		if !ok {
+			return nil, fmt.Errorf("operation not found for method %s at path %s", httpMethod, path)
+		}
+
+		if len(op.Servers) > 0 {
+			server := op.Servers[0]
+			uri = buildPath(server.URL, path, opts.Parameters, opts.Query)
+		}
+	}
 
 	err := u.ValidateRequest(httpMethod, path, opts.Parameters, opts.Query)
 	if err != nil {
