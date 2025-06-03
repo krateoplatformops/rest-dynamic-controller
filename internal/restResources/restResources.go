@@ -376,19 +376,24 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	b, ok := body.(*map[string]interface{})
-	if !ok {
-		log.Debug("Performing REST call", "error", "body is not a map")
-		return fmt.Errorf("body is not a map")
+	// Handle case where API returns 204 No Content or empty body
+	if body != nil {
+		b, ok := body.(*map[string]interface{})
+		if !ok {
+			log.Debug("Performing REST call", "error", "body is not a map")
+			return fmt.Errorf("body is not a map")
+		}
+
+		err = populateStatusFields(clientInfo, mg, b)
+		if err != nil {
+			log.Debug("Updating identifiers", "error", err)
+			return err
+		}
+	} else {
+		log.Debug("Performing REST call", "error", "Body is nil (204 No Content)")
 	}
 
-	err = populateStatusFields(clientInfo, mg, b)
-	if err != nil {
-		log.Debug("Updating identifiers", "error", err)
-		return err
-	}
-
-	log.Debug("Creating external resource", "kind", mg.GetKind())
+	log.Debug("Updating external resource", "kind", mg.GetKind())
 
 	err = unstructuredtools.SetConditions(mg, condition.Creating())
 	if err != nil {
@@ -405,18 +410,9 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-		Pluralizer:    h.pluralizer,
-		DynamicClient: h.dynamicClient,
-	})
-	if err != nil {
-		log.Debug("Updating status", "error", err)
-		return err
-	}
-	log.Debug("Custom resource  values updated", "kind", mg.GetKind())
+	log.Debug("Custom resource values updated", "kind", mg.GetKind())
 
 	return nil
-
 }
 
 func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) error {
