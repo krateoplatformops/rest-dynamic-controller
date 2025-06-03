@@ -99,6 +99,12 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		}
 	}
 
+	if resp.Body == nil &&
+		resp.StatusCode != http.StatusNoContent &&
+		resp.StatusCode != http.StatusNotModified {
+		return nil, fmt.Errorf("response body is empty for status code %d", resp.StatusCode)
+	}
+
 	err = handleResponse(resp.Body, &response)
 	if err != nil {
 		return nil, fmt.Errorf("error handling response: %w", err)
@@ -106,7 +112,7 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 
 	val, ok := response.(map[string]interface{})
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("unexpected response type: %T", response)
 	}
 	return &val, nil
 }
