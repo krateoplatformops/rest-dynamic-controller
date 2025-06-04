@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -53,8 +52,6 @@ func main() {
 		env.String("REST_CONTROLLER_RESOURCE", ""), "resource plural name")
 	namespace := flag.String("namespace",
 		env.String("REST_CONTROLLER_NAMESPACE", ""), "namespace to watch, empty for all namespaces")
-	urlplurals := flag.String("urlplurals",
-		env.String("URL_PLURALS", "http://snowplow.krateo-system.svc.cluster.local:8081/api-info/names"), "url plurals")
 	maxErrorRetryInterval := flag.Duration("max-error-retry-interval",
 		env.Duration("REST_CONTROLLER_MAX_ERROR_RETRY_INTERVAL", 30*time.Second), "The maximum interval between retries when an error occurs. This should be less than the half of the resync interval.")
 	minErrorRetryInterval := flag.Duration("min-error-retry-interval",
@@ -96,7 +93,7 @@ func main() {
 
 	var handler controller.ExternalClient
 
-	pluralizer := pluralizer.New(urlplurals, &http.Client{})
+	pluralizer := pluralizer.New()
 	var swg getter.Getter
 	swg, err = getter.Dynamic(cfg, pluralizer)
 	if err != nil {
@@ -110,7 +107,6 @@ func main() {
 		WithValues("version", *resourceVersion).
 		WithValues("resource", *resourceName).
 		WithValues("namespace", *namespace).
-		WithValues("urlplurals", *urlplurals).
 		WithValues("maxErrorRetryInterval", *maxErrorRetryInterval).
 		WithValues("minErrorRetryInterval", *minErrorRetryInterval).
 		WithValues("workers", *workers).

@@ -33,6 +33,14 @@ func createTestClient(t *testing.T) *UnstructuredClient {
 	}
 }
 
+func TestPathValidation(t *testing.T) {
+	client := createTestClient(t)
+
+	// This should get errors because the path does not exist in the OpenAPI document
+	_, err := client.Call(context.Background(), &http.Client{}, "/api/nonexistent", &RequestConfiguration{Method: "GET"})
+	assert.Error(t, err)
+}
+
 func TestCallWithRecorder(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -200,6 +208,53 @@ func TestCallWithRecorder(t *testing.T) {
 			expected:    map[string]interface{}{"message": "override success"},
 			expectedURL: "http://override.example.com/api/override",
 		},
+		{
+			name: "error with empty body and 200 status code",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "GET", r.Method)
+				w.WriteHeader(http.StatusOK) // 200 OK
+				// No body written, this should cause an error since 200 expects content
+			},
+			path: "/api/test/{id}",
+			opts: &RequestConfiguration{
+				Method: "GET",
+				Parameters: map[string]string{
+					"id": "123",
+				},
+			},
+			expectedError: "response body is empty for unexpected status code 200",
+		},
+		{
+			name: "error with empty body and 201 status code",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "POST", r.Method)
+				w.WriteHeader(http.StatusCreated) // 201 Created
+				// No body written, this should cause an error since 201 expects content
+			},
+			path: "/api/test",
+			opts: &RequestConfiguration{
+				Method: "POST",
+				Body:   map[string]interface{}{"name": "test"},
+			},
+			expectedError: "response body is empty for unexpected status code 201",
+		},
+		{
+			name: "success with empty body and 204 status code",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "PUT", r.Method)
+				w.WriteHeader(http.StatusNoContent) // 204 No Content
+				// No body written
+			},
+			path: "/api/test/{id}",
+			opts: &RequestConfiguration{
+				Method: "PUT",
+				Parameters: map[string]string{
+					"id": "123",
+				},
+				Body: map[string]interface{}{"name": "test"},
+			},
+			expected: nil, // 204 should return nil
+		},
 	}
 
 	for _, tt := range tests {
@@ -238,6 +293,12 @@ func TestCallWithRecorder(t *testing.T) {
 			}
 
 			require.NoError(t, err)
+
+			// We expect nil for 204 and 304 responses and no error
+			if tt.expected == nil {
+				assert.Nil(t, result)
+				return
+			}
 
 			if result == nil {
 				assert.Nil(t, tt.expected)
