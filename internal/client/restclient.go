@@ -119,7 +119,7 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		return nil, fmt.Errorf("response body is empty for unexpected status code %d", resp.StatusCode)
 	}
 
-	// For status codes that allow empty bodies (204, 304), return nil directly, without goint through handleResponse
+	// For status codes that allow empty bodies (e.g., 204, 304), return nil directly, without going through handleResponse
 	if len(bodyBytes) == 0 && statusAllowsEmpty {
 		return nil, nil
 	}
