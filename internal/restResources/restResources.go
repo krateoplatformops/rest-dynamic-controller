@@ -114,9 +114,9 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	if isKnown {
 		// Getting the external resource by its identifier
 		apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Get)
-		if apiCall == nil {
-			log.Debug("API call not found", "action", apiaction.Get)
-			return controller.ExternalObservation{}, fmt.Errorf("API call not found for %s", apiaction.Get)
+		if apiCall == nil || callInfo == nil {
+			log.Info("API action get not found", "action", apiaction.Update)
+			return controller.ExternalObservation{}, fmt.Errorf("API action get not found for %s", apiaction.Get)
 		}
 		if err != nil {
 			log.Debug("Building API call", "error", err)
@@ -283,6 +283,10 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("Building API call", "error", err)
 		return err
 	}
+	if apiCall == nil || callInfo == nil {
+		log.Info("API action create not found", "action", apiaction.Update)
+		return nil
+	}
 	reqConfiguration := BuildCallConfig(callInfo, nil, specFields)
 	body, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
@@ -315,7 +319,6 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-
 		Pluralizer:    h.pluralizer,
 		DynamicClient: h.dynamicClient,
 	})
@@ -362,6 +365,10 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	if err != nil {
 		log.Debug("Building API call", "error", err)
 		return err
+	}
+	if apiCall == nil || callInfo == nil {
+		log.Info("API action update not found", "action", apiaction.Update)
+		return nil
 	}
 
 	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
@@ -462,14 +469,13 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Delete)
-	if apiCall == nil {
-		log.Debug("API call not found", "action", apiaction.Delete)
-		log.Debug("Remote resource cannot be deleted, deleting CR")
-		return nil
-	}
 	if err != nil {
 		log.Debug("Building API call", "error", err)
 		return err
+	}
+	if apiCall == nil || callInfo == nil {
+		log.Info("API action delete not found", "action", apiaction.Update)
+		return nil
 	}
 	reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)
 	if reqConfiguration == nil {
