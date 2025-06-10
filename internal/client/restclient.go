@@ -99,6 +99,31 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		}
 	}
 
+	// Read the response body as we need to check its content length
+	// Just checking if resp.Body is nil does not work, as it can be non-nil with a zero-length body.
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	defer resp.Body.Close()
+
+	// Re-wrap body otherwise it will be closed
+	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+	// Allow empty body only 204 No Content and 304 Not Modified responses
+	statusAllowsEmpty := resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotModified
+
+	// E.g. 200 but with no content, or 201 Created with no content (error case)
+	if len(bodyBytes) == 0 && !statusAllowsEmpty {
+		return nil, fmt.Errorf("response body is empty for unexpected status code %d", resp.StatusCode)
+	}
+
+	// For status codes that allow empty bodies (e.g., 204, 304), return nil directly, without going through handleResponse
+	if len(bodyBytes) == 0 && statusAllowsEmpty {
+		return nil, nil
+	}
+
 	err = handleResponse(resp.Body, &response)
 	if err != nil {
 		return nil, fmt.Errorf("error handling response: %w", err)
@@ -106,7 +131,7 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 
 	val, ok := response.(map[string]interface{})
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("unexpected response type: %T", response)
 	}
 	return &val, nil
 }
