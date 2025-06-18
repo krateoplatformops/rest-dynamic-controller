@@ -185,12 +185,34 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		}
 	}
 
+	// Body can be nil if the API does not return anything on get with a proper status code (204 No Content, 304 Not Modified).
+	if body == nil {
+		cond := condition.Available()
+		cond.Message = "Resource is assumed to be up-to-date. Returned body is nil."
+		err = unstructuredtools.SetConditions(mg, cond)
+		if err != nil {
+			log.Debug("Setting condition", "error", err)
+			return controller.ExternalObservation{}, err
+		}
+		_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+			Pluralizer:    h.pluralizer,
+			DynamicClient: h.dynamicClient,
+		})
+		if err != nil {
+			log.Debug("Updating status", "error", err)
+			return controller.ExternalObservation{}, err
+		}
+		log.Debug("Resource is assumed to be up-to-date. Returned body is nil.")
+		return controller.ExternalObservation{
+			ResourceExists:   true,
+			ResourceUpToDate: true,
+		}, nil
+	}
 	b, ok := body.(*map[string]interface{})
 	if !ok {
-		log.Debug("Performing REST call", "error", "body is not a map")
-		return controller.ExternalObservation{}, fmt.Errorf("body is not a map")
+		log.Debug("Performing REST call", "error", "body is not an object")
+		return controller.ExternalObservation{}, fmt.Errorf("body is not an object")
 	}
-
 	if b != nil {
 		err = populateStatusFields(clientInfo, mg, b)
 		if err != nil {
@@ -293,15 +315,19 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("Performing REST call", "error", err)
 		return err
 	}
-	body, ok := body.(*map[string]interface{})
-	if !ok {
-		log.Debug("Performing REST call", "error", "body is not a map")
-		return fmt.Errorf("body is not a map")
-	}
-	b, ok := body.(*map[string]interface{})
-	if !ok {
-		log.Debug("Performing REST call", "error", "body is not a map")
-		return fmt.Errorf("body is not a map")
+
+	if body != nil {
+		b, ok := body.(*map[string]interface{})
+		if !ok {
+			log.Debug("Performing REST call", "error", "body is not an object")
+			return fmt.Errorf("body is not an object")
+		}
+
+		err = populateStatusFields(clientInfo, mg, b)
+		if err != nil {
+			log.Debug("Updating identifiers", "error", err)
+			return err
+		}
 	}
 
 	log.Debug("Creating external resource", "kind", mg.GetKind())
@@ -309,12 +335,6 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	err = unstructuredtools.SetConditions(mg, condition.Creating())
 	if err != nil {
 		log.Debug("Setting condition", "error", err)
-		return err
-	}
-
-	err = populateStatusFields(clientInfo, mg, b)
-	if err != nil {
-		log.Debug("Updating identifiers", "error", err)
 		return err
 	}
 
@@ -383,12 +403,12 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	// Handle case where API returns 204 No Content or empty body
+	// Body can be empty if the API does not return anything on update with a proper status code (204 No Content, 304 Not Modified).
 	if body != nil {
 		b, ok := body.(*map[string]interface{})
 		if !ok {
-			log.Debug("Performing REST call", "error", "body is not a map")
-			return fmt.Errorf("body is not a map")
+			log.Debug("Performing REST call", "error", "body is not an object")
+			return fmt.Errorf("body is not an object")
 		}
 
 		err = populateStatusFields(clientInfo, mg, b)
@@ -396,8 +416,6 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 			log.Debug("Updating identifiers", "error", err)
 			return err
 		}
-	} else {
-		log.Debug("Performing REST call", "error", "Body is nil (204 No Content)")
 	}
 
 	log.Debug("Updating external resource", "kind", mg.GetKind())
