@@ -15,7 +15,7 @@ import (
 	"github.com/krateoplatformops/unstructured-runtime/pkg/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	restResources "github.com/krateoplatformops/rest-dynamic-controller/internal/restResources"
+	restResources "github.com/krateoplatformops/rest-dynamic-controller/internal/controllers"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"

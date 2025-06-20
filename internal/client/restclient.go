@@ -16,7 +16,16 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (any, error) {
+type Response struct {
+	ResponseBody any
+	statusCode   int
+}
+
+func (r *Response) IsPending() bool {
+	return r.statusCode == http.StatusProcessing || r.statusCode == http.StatusContinue || r.statusCode == http.StatusAccepted
+}
+
+func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (*Response, error) {
 	uri := buildPath(u.Server, path, opts.Parameters, opts.Query)
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {
@@ -131,18 +140,23 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		return nil, fmt.Errorf("error handling response: %w", err)
 	}
 
-	return response, nil
+	return &Response{
+		ResponseBody: response,
+		statusCode:   resp.StatusCode,
+	}, nil
 }
 
 // It support both list and single item responses
-func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (any, error) {
-	list, err := u.Call(ctx, cli, path, opts)
+func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (*Response, error) {
+	response, err := u.Call(ctx, cli, path, opts)
 	if err != nil {
 		return nil, err
 	}
-	if list == nil {
+	if response == nil {
 		return nil, nil
 	}
+
+	list := response.ResponseBody
 
 	var li map[string]interface{}
 	if _, ok := list.([]interface{}); ok {
@@ -180,7 +194,10 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 							return nil, err
 						}
 						if ok {
-							return &itMap, nil
+							return &Response{
+								ResponseBody: itMap,
+								statusCode:   response.statusCode,
+							}, nil
 						}
 					}
 

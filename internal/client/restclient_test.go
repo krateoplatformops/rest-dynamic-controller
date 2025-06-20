@@ -307,7 +307,7 @@ func TestCallWithRecorder(t *testing.T) {
 				return
 			}
 
-			switch v := result.(type) {
+			switch v := result.ResponseBody.(type) {
 			case map[string]interface{}:
 				assert.Equal(t, tt.expected, v)
 			case []interface{}:
@@ -399,7 +399,7 @@ func TestCallAdditionalCases(t *testing.T) {
 
 			require.NoError(t, err)
 			if tt.expected != nil {
-				switch v := result.(type) {
+				switch v := result.ResponseBody.(type) {
 				case *map[string]interface{}:
 					assert.Equal(t, tt.expected, *v)
 				default:
@@ -580,11 +580,11 @@ func TestFindBy(t *testing.T) {
 				return
 			}
 
-			switch v := result.(type) {
+			switch v := result.ResponseBody.(type) {
 			case *map[string]interface{}:
 				assert.Equal(t, tt.expected, *v)
 			default:
-				assert.Equal(t, tt.expected, result)
+				assert.Equal(t, tt.expected, result.ResponseBody)
 			}
 		})
 	}
