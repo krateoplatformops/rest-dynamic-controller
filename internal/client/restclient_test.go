@@ -3,6 +3,7 @@ package restclient
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"github.com/pb33f/libopenapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func createTestClient(t *testing.T) *UnstructuredClient {
@@ -260,7 +262,7 @@ func TestCallWithRecorder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create our mock transport that uses the ResponseRecorder
-			mockTransport := &mockTransport{
+			mockTransport := &mockTransportImpl{
 				handler: tt.handler,
 			}
 
@@ -305,25 +307,322 @@ func TestCallWithRecorder(t *testing.T) {
 				return
 			}
 
-			switch v := result.(type) {
-			case *map[string]interface{}:
-				assert.Equal(t, tt.expected, *v)
-			case *[]interface{}:
-				assert.Equal(t, tt.expected, *v)
+			switch v := result.ResponseBody.(type) {
+			case map[string]interface{}:
+				assert.Equal(t, tt.expected, v)
+			case []interface{}:
+				assert.Equal(t, tt.expected, v)
 			default:
 				t.Errorf("unexpected result type: %T", result)
 			}
 		})
 	}
 }
+func TestCallAdditionalCases(t *testing.T) {
+	tests := []struct {
+		name          string
+		handler       http.HandlerFunc
+		path          string
+		opts          *RequestConfiguration
+		clientSetup   func(*UnstructuredClient)
+		expected      interface{}
+		expectedError string
+	}{
+		{
+			name: "operation not found for method",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			},
+			path: "/api/test",
+			opts: &RequestConfiguration{
+				Method: "PATCH", // Method not defined in the OpenAPI spec
+			},
+			expectedError: "operation not found for method PATCH at path /api/test",
+		},
+		{
+			name: "invalid body type",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			},
+			path: "/api/test",
+			opts: &RequestConfiguration{
+				Method: "POST",
+				Body:   "invalid body type", // Should be map[string]any
+			},
+			expectedError: "invalid body type: string",
+		},
+		{
+			name: "failed to read response body",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				// This will be handled by the mock transport to simulate read error
+			},
+			path: "/api/test",
+			opts: &RequestConfiguration{
+				Method: "GET",
+			},
+			clientSetup: func(c *UnstructuredClient) {
+				// Will be handled by special mock transport
+			},
+			expectedError: "failed to read response body",
+		},
+	}
 
-// mockTransport implements http.RoundTripper using a ResponseRecorder
-type mockTransport struct {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var mockTransport http.RoundTripper
+
+			if tt.name == "failed to read response body" {
+				// Special case: simulate body read error
+				mockTransport = &errorBodyTransport{handler: tt.handler}
+			} else {
+				mockTransport = &mockTransportImpl{handler: tt.handler}
+			}
+
+			client := createTestClient(t)
+			if tt.clientSetup != nil {
+				tt.clientSetup(client)
+			}
+
+			testClient := &http.Client{
+				Transport: mockTransport,
+			}
+
+			result, err := client.Call(context.Background(), testClient, tt.path, tt.opts)
+
+			if tt.expectedError != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedError)
+				return
+			}
+
+			require.NoError(t, err)
+			if tt.expected != nil {
+				switch v := result.ResponseBody.(type) {
+				case *map[string]interface{}:
+					assert.Equal(t, tt.expected, *v)
+				default:
+					t.Errorf("unexpected result type: %T", result)
+				}
+			}
+		})
+	}
+}
+
+func TestFindBy(t *testing.T) {
+	tests := []struct {
+		name             string
+		handler          http.HandlerFunc
+		path             string
+		opts             *RequestConfiguration
+		clientSetup      func(*UnstructuredClient)
+		expected         interface{}
+		expectedError    string
+		identifierFields []string
+		specFields       map[string]interface{}
+	}{
+		{
+			name: "successful find by identifier",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode([]interface{}{
+					map[string]interface{}{"id": "1", "name": "item1"},
+					map[string]interface{}{"id": "2", "name": "item2"},
+					map[string]interface{}{"id": "target", "name": "target_item"},
+				},
+				)
+			},
+			path: "/api/test",
+			opts: &RequestConfiguration{
+				Method: "GET",
+			},
+			identifierFields: []string{"id"},
+			specFields:       map[string]interface{}{"spec": map[string]interface{}{"id": "target"}},
+			expected:         map[string]interface{}{"id": "target", "name": "target_item"},
+		},
+		{
+			name: "find by nested identifier",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"items": []interface{}{
+						map[string]interface{}{
+							"metadata": map[string]interface{}{"name": "item1"},
+							"spec":     map[string]interface{}{"value": "test1"},
+						},
+						map[string]interface{}{
+							"metadata": map[string]interface{}{"name": "target"},
+							"spec":     map[string]interface{}{"value": "test2"},
+						},
+					},
+				})
+			},
+			path: "/api/test",
+			opts: &RequestConfiguration{
+				Method: "GET",
+			},
+			identifierFields: []string{"metadata.name"},
+			specFields: map[string]interface{}{
+				"spec": map[string]interface{}{
+					"metadata": map[string]interface{}{
+						"name": "target"}}},
+			expected: map[string]interface{}{
+				"metadata": map[string]interface{}{"name": "target"},
+				"spec":     map[string]interface{}{"value": "test2"},
+			},
+		},
+		{
+			name: "item not found",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"items": []interface{}{
+						map[string]interface{}{"id": "1", "name": "item1"},
+						map[string]interface{}{"id": "2", "name": "item2"},
+					},
+				})
+			},
+			path: "/api/test",
+			opts: &RequestConfiguration{
+				Method: "GET",
+			},
+			identifierFields: []string{"id"},
+			specFields:       map[string]interface{}{"spec": map[string]interface{}{"id": "nonexistent"}},
+			expectedError:    "item not found",
+		},
+		{
+			name: "empty response",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode([]interface{}{})
+			},
+			path: "/api/test",
+			opts: &RequestConfiguration{
+				Method: "GET",
+			},
+			identifierFields: []string{"id"},
+			specFields:       map[string]interface{}{"spec": map[string]interface{}{"id": "target"}},
+			expectedError:    "item not found",
+		},
+		{
+			name: "Call method returns error",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+			path: "/api/test",
+			opts: &RequestConfiguration{
+				Method: "GET",
+			},
+			identifierFields: []string{"id"},
+			specFields:       map[string]interface{}{"id": "target"},
+			expectedError:    "unexpected status: 500",
+		},
+		{
+			name: "non-string identifier value",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"items": []interface{}{
+						map[string]interface{}{"id": 123, "name": "item1"},
+						map[string]interface{}{"id": 456, "name": "item2"},
+					},
+				})
+			},
+			path: "/api/test",
+			opts: &RequestConfiguration{
+				Method: "GET",
+			},
+			identifierFields: []string{"id"},
+			specFields:       map[string]interface{}{"spec": map[string]interface{}{"id": "456"}}, // Will be converted to string for comparison
+			expected:         map[string]interface{}{"id": 456, "name": "item2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockTransport := &mockTransportImpl{
+				handler: tt.handler,
+			}
+
+			client := createTestClient(t)
+			client.IdentifierFields = tt.identifierFields
+
+			u := unstructured.Unstructured{}
+			u.SetUnstructuredContent(tt.specFields)
+			client.SpecFields = &u
+
+			if tt.clientSetup != nil {
+				tt.clientSetup(client)
+			}
+
+			testClient := &http.Client{
+				Transport: mockTransport,
+			}
+
+			result, err := client.FindBy(context.Background(), testClient, tt.path, tt.opts)
+
+			if tt.expectedError != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedError)
+				return
+			}
+
+			require.NoError(t, err)
+
+			if tt.expected == nil {
+				assert.Nil(t, result)
+				return
+			}
+
+			switch v := result.ResponseBody.(type) {
+			case *map[string]interface{}:
+				assert.Equal(t, tt.expected, *v)
+			default:
+				assert.Equal(t, tt.expected, result.ResponseBody)
+			}
+		})
+	}
+}
+
+// errorBodyTransport simulates an error when reading the response body
+type errorBodyTransport struct {
+	handler http.HandlerFunc
+}
+
+func (e *errorBodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	rr := httptest.NewRecorder()
+	e.handler(rr, req)
+
+	resp := rr.Result()
+	// Replace the body with an error-producing reader
+	resp.Body = &errorReader{}
+	return resp, nil
+}
+
+// errorReader always returns an error when Read is called
+type errorReader struct{}
+
+func (e *errorReader) Read(p []byte) (n int, err error) {
+	return 0, fmt.Errorf("simulated read error")
+}
+
+func (e *errorReader) Close() error {
+	return nil
+}
+
+// mockTransportImpl implements http.RoundTripper using a ResponseRecorder
+type mockTransportImpl struct {
 	handler     http.HandlerFunc
 	capturedURL string
 }
 
-func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (m *mockTransportImpl) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Capture the full URL for verification
 	if m.capturedURL == "" {
 		m.capturedURL = req.URL.String()

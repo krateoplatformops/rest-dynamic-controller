@@ -7,16 +7,16 @@ import (
 	"net/http"
 
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/client"
+	customcondition "github.com/krateoplatformops/rest-dynamic-controller/internal/controllers/condition"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/apiaction"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured/condition"
-
 	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured/condition"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
@@ -109,7 +109,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		log.Debug("Error getting status.", "error", err)
 	}
 
-	var body any
+	var response *restclient.Response
 	isKnown := isResourceKnown(cli, log, clientInfo, statusFields, specFields)
 	if isKnown {
 		// Getting the external resource by its identifier
@@ -126,8 +126,17 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		if reqConfiguration == nil {
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
-		body, err = apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
-		if restclient.IsNotFoundError(err) {
+		response, err = apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
+		notfound := restclient.IsNotFoundError(err)
+		if notfound && unstructuredtools.IsConditionSet(mg, customcondition.Pending()) {
+			log.Debug("External resource exist but is in pending state", "kind", mg.GetKind())
+			// We can stop here if the resource is not found and it is in pending state
+			// because it means that the resource is being created.
+			return controller.ExternalObservation{
+				ResourceExists:   true,
+				ResourceUpToDate: true,
+			}, nil
+		} else if notfound {
 			log.Debug("External resource not found", "kind", mg.GetKind())
 			return controller.ExternalObservation{
 				ResourceExists:   false,
@@ -174,10 +183,21 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Building call configuration", "error", "error building call configuration")
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
-		body, err = apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
-		if restclient.IsNotFoundError(err) {
+		response, err = apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
+		notfound := restclient.IsNotFoundError(err)
+		if notfound && unstructuredtools.IsConditionSet(mg, customcondition.Pending()) {
+			log.Debug("External resource exist but is in pending state", "kind", mg.GetKind())
+			// We can stop here if the resource is not found and it is in pending state because it means that the resource is being created.
+			return controller.ExternalObservation{
+				ResourceExists:   true,
+				ResourceUpToDate: true,
+			}, nil
+		} else if notfound {
 			log.Debug("External resource not found", "kind", mg.GetKind())
-			return controller.ExternalObservation{}, nil
+			return controller.ExternalObservation{
+				ResourceExists:   false,
+				ResourceUpToDate: false,
+			}, nil
 		}
 		if err != nil {
 			log.Debug("Performing REST call", "error", err)
@@ -185,8 +205,8 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		}
 	}
 
-	// Body can be nil if the API does not return anything on get with a proper status code (204 No Content, 304 Not Modified).
-	if body == nil {
+	// Response can be nil if the API does not return anything on get with a proper status code (204 No Content, 304 Not Modified).
+	if response == nil {
 		cond := condition.Available()
 		cond.Message = "Resource is assumed to be up-to-date. Returned body is nil."
 		err = unstructuredtools.SetConditions(mg, cond)
@@ -208,7 +228,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			ResourceUpToDate: true,
 		}, nil
 	}
-	b, ok := body.(*map[string]interface{})
+	b, ok := response.ResponseBody.(map[string]interface{})
 	if !ok {
 		log.Debug("Performing REST call", "error", "body is not an object")
 		return controller.ExternalObservation{}, fmt.Errorf("body is not an object")
@@ -228,19 +248,16 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Updating status", "error", err)
 			return controller.ExternalObservation{}, err
 		}
-		res, err := isCRUpdated(mg, *b)
+		res, err := isCRUpdated(mg, b)
 		if err != nil {
-			log.Debug("Checking if CR is updated", "error", err)
+			log.Debug("Checking if CR is updated", "reason", res.String(), "error", err)
 			return controller.ExternalObservation{}, err
 		}
 		if !res.IsEqual {
 			cond := condition.Unavailable()
-			if res.Reason != nil {
-				cond.Reason = fmt.Sprintf("Resource is not up-to-date due to %s - spec value: %s, remote value: %s", res.Reason.Reason, res.Reason.FirstValue, res.Reason.SecondValue)
-			}
-
+			cond.Reason = fmt.Sprintf("Resource is not up-to-date due to %s", res.String())
 			unstructuredtools.SetConditions(mg, cond)
-			log.Debug("External resource not up-to-date", "kind", mg.GetKind())
+			log.Debug("External resource not up-to-date", "kind", mg.GetKind(), "reason", res.String())
 			return controller.ExternalObservation{
 				ResourceExists:   true,
 				ResourceUpToDate: false,
@@ -310,14 +327,15 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return nil
 	}
 	reqConfiguration := BuildCallConfig(callInfo, nil, specFields)
-	body, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
+	response, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
 		log.Debug("Performing REST call", "error", err)
 		return err
 	}
 
-	if body != nil {
-		b, ok := body.(*map[string]interface{})
+	if response != nil {
+		body := response.ResponseBody
+		b, ok := body.(map[string]interface{})
 		if !ok {
 			log.Debug("Performing REST call", "error", "body is not an object")
 			return fmt.Errorf("body is not an object")
@@ -329,13 +347,21 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 			return err
 		}
 	}
-
 	log.Debug("Creating external resource", "kind", mg.GetKind())
 
-	err = unstructuredtools.SetConditions(mg, condition.Creating())
-	if err != nil {
-		log.Debug("Setting condition", "error", err)
-		return err
+	if response.IsPending() {
+		log.Debug("External resource is pending", "kind", mg.GetKind())
+		err = unstructuredtools.SetConditions(mg, customcondition.Pending())
+		if err != nil {
+			log.Debug("Setting condition", "error", err)
+			return err
+		}
+	} else {
+		err = unstructuredtools.SetConditions(mg, condition.Creating())
+		if err != nil {
+			log.Debug("Setting condition", "error", err)
+			return err
+		}
 	}
 
 	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
@@ -397,15 +423,16 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 	reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)
-	body, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
+	response, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
 		log.Debug("Performing REST call", "error", err)
 		return err
 	}
 
 	// Body can be empty if the API does not return anything on update with a proper status code (204 No Content, 304 Not Modified).
-	if body != nil {
-		b, ok := body.(*map[string]interface{})
+	if response != nil {
+		body := response.ResponseBody
+		b, ok := body.(map[string]interface{})
 		if !ok {
 			log.Debug("Performing REST call", "error", "body is not an object")
 			return fmt.Errorf("body is not an object")
@@ -417,13 +444,21 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 			return err
 		}
 	}
-
 	log.Debug("Updating external resource", "kind", mg.GetKind())
 
-	err = unstructuredtools.SetConditions(mg, condition.Creating())
-	if err != nil {
-		log.Debug("Setting condition", "error", err)
-		return err
+	if response.IsPending() {
+		log.Debug("External resource is pending", "kind", mg.GetKind())
+		err = unstructuredtools.SetConditions(mg, customcondition.Pending())
+		if err != nil {
+			log.Debug("Setting condition", "error", err)
+			return err
+		}
+	} else {
+		err = unstructuredtools.SetConditions(mg, condition.Creating())
+		if err != nil {
+			log.Debug("Setting condition", "error", err)
+			return err
+		}
 	}
 
 	mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{

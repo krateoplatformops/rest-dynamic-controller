@@ -12,12 +12,9 @@ import (
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/apiaction"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	"github.com/rs/zerolog/log"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/dynamic"
 )
 
 type RequestedParams struct {
@@ -33,7 +30,7 @@ type CallInfo struct {
 	Method           string
 }
 
-type APIFuncDef func(ctx context.Context, cli *http.Client, path string, conf *restclient.RequestConfiguration) (any, error)
+type APIFuncDef func(ctx context.Context, cli *http.Client, path string, conf *restclient.RequestConfiguration) (*restclient.Response, error)
 
 // APICallBuilder builds the API call based on the action and the info from the RestDefinition
 func APICallBuilder(cli *restclient.UnstructuredClient, info *getter.Info, action apiaction.APIAction) (apifunc APIFuncDef, callInfo *CallInfo, err error) {
@@ -141,6 +138,16 @@ type Reason struct {
 type ComparisonResult struct {
 	IsEqual bool
 	Reason  *Reason
+}
+
+func (r ComparisonResult) String() string {
+	if r.IsEqual {
+		return "ComparisonResult: IsEqual=true"
+	}
+	if r.Reason == nil {
+		return "ComparisonResult: IsEqual=false, Reason=nil"
+	}
+	return fmt.Sprintf("ComparisonResult: IsEqual=false, Reason=%s, FirstValue=%v, SecondValue=%v", r.Reason.Reason, r.Reason.FirstValue, r.Reason.SecondValue)
 }
 
 // compareExisting recursively compares fields between two maps and logs differences.
@@ -391,39 +398,25 @@ func compareAny(a any, b any) (bool, error) {
 	}
 }
 
-func removeFinalizersAndUpdate(ctx context.Context, log logging.Logger, pluralizer pluralizer.PluralizerInterface, dynamic dynamic.Interface, mg *unstructured.Unstructured) error {
-	mg.SetFinalizers([]string{})
-	_, err := tools.Update(ctx, mg, tools.UpdateOptions{
-		Pluralizer:    pluralizer,
-		DynamicClient: dynamic,
-	})
-	if err != nil {
-		log.Debug("Deleting finalizer", "error", err)
-		return err
-	}
-	return nil
-}
-
 // populateStatusFields populates the status fields in the mg object with the values from the body
-func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured, body *map[string]interface{}) error {
-	if body != nil {
-		for k, v := range *body {
-			for _, identifier := range clientInfo.Resource.Identifiers {
-				if k == identifier {
-					stringValue, err := text.GenericToString(v)
-					if err != nil {
-						log.Err(err).Msg("Converting value to string")
-						return err
-					}
-					err = unstructured.SetNestedField(mg.Object, stringValue, "status", identifier)
-					if err != nil {
-						log.Err(err).Msg("Setting identifier")
-						return err
-					}
+func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured, body map[string]interface{}) error {
+	for k, v := range body {
+		for _, identifier := range clientInfo.Resource.Identifiers {
+			if k == identifier {
+				stringValue, err := text.GenericToString(v)
+				if err != nil {
+					log.Err(err).Msg("Converting value to string")
+					return err
+				}
+				err = unstructured.SetNestedField(mg.Object, stringValue, "status", identifier)
+				if err != nil {
+					log.Err(err).Msg("Setting identifier")
+					return err
 				}
 			}
 		}
 	}
+
 	return nil
 }
 
