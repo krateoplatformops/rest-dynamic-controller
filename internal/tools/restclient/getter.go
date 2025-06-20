@@ -75,10 +75,6 @@ type Getter interface {
 	Get(un *unstructured.Unstructured) (*Info, error)
 }
 
-func Static(chart string) Getter {
-	return staticGetter{chartName: chart}
-}
-
 func Dynamic(cfg *rest.Config, pluralizer pluralizer.PluralizerInterface) (Getter, error) {
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
@@ -88,18 +84,6 @@ func Dynamic(cfg *rest.Config, pluralizer pluralizer.PluralizerInterface) (Gette
 	return &dynamicGetter{
 		pluralizer:    pluralizer,
 		dynamicClient: dyn,
-	}, nil
-}
-
-var _ Getter = (*staticGetter)(nil)
-
-type staticGetter struct {
-	chartName string
-}
-
-func (pig staticGetter) Get(_ *unstructured.Unstructured) (*Info, error) {
-	return &Info{
-		URL: pig.chartName,
 	}, nil
 }
 

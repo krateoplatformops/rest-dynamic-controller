@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 
+	rawyaml "gopkg.in/yaml.v3"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -129,13 +131,10 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		return nil, fmt.Errorf("error handling response: %w", err)
 	}
 
-	val, ok := response.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type: %T", response)
-	}
-	return &val, nil
+	return response, nil
 }
 
+// It support both list and single item responses
 func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (any, error) {
 	list, err := u.Call(ctx, cli, path, opts)
 	if err != nil {
@@ -146,41 +145,45 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 	}
 
 	var li map[string]interface{}
-
-	if _, ok := list.([]interface{}); !ok {
+	if _, ok := list.([]interface{}); ok {
 		li = map[string]interface{}{
 			"items": list,
 		}
-	}
-
-	if _, ok := list.(map[string]interface{}); !ok {
-		return nil, fmt.Errorf("unexpected response type: %T", list)
+	} else {
+		li, ok = list.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("unexpected response type: %T", list)
+		}
 	}
 
 	for _, v := range li {
-		if v, ok := v.([]interface{}); ok {
-			if len(v) > 0 {
-				for _, item := range v {
-					if item, ok := item.(map[string]interface{}); ok {
-						for _, ide := range u.IdentifierFields {
-							idepath := strings.Split(ide, ".") // split the identifier field by '.'
-							responseValue, _, err := unstructured.NestedString(item, idepath...)
+		if vli, ok := v.([]interface{}); ok {
+			if len(vli) > 0 {
+				for _, item := range vli {
+					itMap, ok := item.(map[string]interface{})
+					if !ok {
+						continue // skip this item if it's not a map
+					}
+
+					for _, ide := range u.IdentifierFields {
+						idepath := strings.Split(ide, ".") // split the identifier field by '.'
+						responseValue, _, err := unstructured.NestedString(itMap, idepath...)
+						if err != nil {
+							val, _, err := unstructured.NestedFieldNoCopy(itMap, idepath...)
 							if err != nil {
-								val, _, err := unstructured.NestedFieldCopy(item, idepath...)
-								if err != nil {
-									return nil, fmt.Errorf("error getting nested field: %w", err)
-								}
-								responseValue = fmt.Sprintf("%v", val)
+								return nil, fmt.Errorf("error getting nested field: %w", err)
 							}
-							ok, err = u.isInSpecFields(ide, responseValue)
-							if err != nil {
-								return nil, err
-							}
-							if ok {
-								return &item, nil
-							}
+							responseValue = fmt.Sprintf("%v", val)
+						}
+						ok, err = u.isInSpecFields(ide, responseValue)
+						if err != nil {
+							return nil, err
+						}
+						if ok {
+							return &itMap, nil
 						}
 					}
+
 				}
 			}
 			break
@@ -192,7 +195,22 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 	}
 }
 
-// buildPath constructs the URL path with the given parameters and query.
+func jsonToYAML(jsonData []byte) ([]byte, error) {
+	// First unmarshal JSON into a generic interface
+	var obj interface{}
+	if err := json.Unmarshal(jsonData, &obj); err != nil {
+		return nil, err
+	}
+
+	// Then marshal to YAML
+	yamlData, err := rawyaml.Marshal(obj)
+	if err != nil {
+		return nil, err
+	}
+
+	return yamlData, nil
+}
+
 // response should be a pointer to the object where the response will be unmarshalled.
 func handleResponse(rc io.ReadCloser, response any) error {
 	if rc == nil {
@@ -206,7 +224,17 @@ func handleResponse(rc io.ReadCloser, response any) error {
 	if len(data) == 0 {
 		return nil
 	}
-	return json.Unmarshal(data, &response)
+
+	yamlData, err := jsonToYAML(data)
+	if err != nil {
+		return fmt.Errorf("error converting JSON to YAML: %w", err)
+	}
+
+	err = rawyaml.Unmarshal(yamlData, response)
+	if err != nil {
+		return fmt.Errorf("error unmarshalling YAML response: %w", err)
+	}
+	return nil
 }
 
 type debuggingRoundTripper struct {

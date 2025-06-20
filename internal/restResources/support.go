@@ -12,12 +12,9 @@ import (
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/apiaction"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	"github.com/rs/zerolog/log"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/dynamic"
 )
 
 type RequestedParams struct {
@@ -141,6 +138,16 @@ type Reason struct {
 type ComparisonResult struct {
 	IsEqual bool
 	Reason  *Reason
+}
+
+func (r ComparisonResult) String() string {
+	if r.IsEqual {
+		return "ComparisonResult: IsEqual=true"
+	}
+	if r.Reason == nil {
+		return "ComparisonResult: IsEqual=false, Reason=nil"
+	}
+	return fmt.Sprintf("ComparisonResult: IsEqual=false, Reason=%s, FirstValue=%v, SecondValue=%v", r.Reason.Reason, r.Reason.FirstValue, r.Reason.SecondValue)
 }
 
 // compareExisting recursively compares fields between two maps and logs differences.
@@ -391,23 +398,10 @@ func compareAny(a any, b any) (bool, error) {
 	}
 }
 
-func removeFinalizersAndUpdate(ctx context.Context, log logging.Logger, pluralizer pluralizer.PluralizerInterface, dynamic dynamic.Interface, mg *unstructured.Unstructured) error {
-	mg.SetFinalizers([]string{})
-	_, err := tools.Update(ctx, mg, tools.UpdateOptions{
-		Pluralizer:    pluralizer,
-		DynamicClient: dynamic,
-	})
-	if err != nil {
-		log.Debug("Deleting finalizer", "error", err)
-		return err
-	}
-	return nil
-}
-
 // populateStatusFields populates the status fields in the mg object with the values from the body
-func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured, body *map[string]interface{}) error {
+func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured, body map[string]interface{}) error {
 	if body != nil {
-		for k, v := range *body {
+		for k, v := range body {
 			for _, identifier := range clientInfo.Resource.Identifiers {
 				if k == identifier {
 					stringValue, err := text.GenericToString(v)

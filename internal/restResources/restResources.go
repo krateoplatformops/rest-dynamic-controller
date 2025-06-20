@@ -208,7 +208,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			ResourceUpToDate: true,
 		}, nil
 	}
-	b, ok := body.(*map[string]interface{})
+	b, ok := body.(map[string]interface{})
 	if !ok {
 		log.Debug("Performing REST call", "error", "body is not an object")
 		return controller.ExternalObservation{}, fmt.Errorf("body is not an object")
@@ -228,9 +228,9 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Updating status", "error", err)
 			return controller.ExternalObservation{}, err
 		}
-		res, err := isCRUpdated(mg, *b)
+		res, err := isCRUpdated(mg, b)
 		if err != nil {
-			log.Debug("Checking if CR is updated", "error", err)
+			log.Debug("Checking if CR is updated", "reason", res.String(), "error", err)
 			return controller.ExternalObservation{}, err
 		}
 		if !res.IsEqual {
@@ -317,7 +317,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	if body != nil {
-		b, ok := body.(*map[string]interface{})
+		b, ok := body.(map[string]interface{})
 		if !ok {
 			log.Debug("Performing REST call", "error", "body is not an object")
 			return fmt.Errorf("body is not an object")
@@ -405,7 +405,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 
 	// Body can be empty if the API does not return anything on update with a proper status code (204 No Content, 304 Not Modified).
 	if body != nil {
-		b, ok := body.(*map[string]interface{})
+		b, ok := body.(map[string]interface{})
 		if !ok {
 			log.Debug("Performing REST call", "error", "body is not an object")
 			return fmt.Errorf("body is not an object")
