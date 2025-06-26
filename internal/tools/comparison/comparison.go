@@ -1,133 +1,9 @@
-package restResources
+package comparison
 
 import (
-	"context"
 	"fmt"
-	"net/http"
 	"reflect"
-	"strings"
-
-	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/client"
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/text"
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/apiaction"
-	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
-	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
-	"github.com/rs/zerolog/log"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
-
-type RequestedParams struct {
-	Parameters text.StringSet
-	Query      text.StringSet
-	Body       text.StringSet
-}
-
-type CallInfo struct {
-	Path             string
-	ReqParams        *RequestedParams
-	IdentifierFields []string
-	Method           string
-}
-
-type APIFuncDef func(ctx context.Context, cli *http.Client, path string, conf *restclient.RequestConfiguration) (*restclient.Response, error)
-
-// APICallBuilder builds the API call based on the action and the info from the RestDefinition
-func APICallBuilder(cli *restclient.UnstructuredClient, info *getter.Info, action apiaction.APIAction) (apifunc APIFuncDef, callInfo *CallInfo, err error) {
-	identifierFields := info.Resource.Identifiers
-	for _, descr := range info.Resource.VerbsDescription {
-		if strings.EqualFold(descr.Action, action.String()) {
-			params, query, err := cli.RequestedParams(descr.Method, descr.Path)
-			if err != nil {
-				return nil, nil, fmt.Errorf("error retrieving requested params: %s", err)
-			}
-			var body text.StringSet
-			if descr.Method == "POST" || descr.Method == "PUT" || descr.Method == "PATCH" {
-				body, err = cli.RequestedBody(descr.Method, descr.Path)
-				if err != nil {
-					return nil, nil, fmt.Errorf("error retrieving requested body params: %s", err)
-				}
-				if body == nil {
-					body = text.StringSet{}
-				}
-			}
-
-			callInfo := &CallInfo{
-				Path:   descr.Path,
-				Method: descr.Method,
-				ReqParams: &RequestedParams{
-					Parameters: params,
-					Query:      query,
-					Body:       body,
-				},
-				IdentifierFields: identifierFields,
-			}
-
-			switch action {
-			// FindBy is used to find the resource by the identifier fields
-			case apiaction.FindBy:
-				return cli.FindBy, callInfo, nil
-			default:
-				return cli.Call, callInfo, nil
-			}
-		}
-	}
-	return nil, nil, nil
-}
-
-// BuildCallConfig builds the request configuration based on the callInfo and the fields from the status and spec
-func BuildCallConfig(callInfo *CallInfo, statusFields map[string]interface{}, specFields map[string]interface{}) *restclient.RequestConfiguration {
-	reqConfiguration := &restclient.RequestConfiguration{}
-	reqConfiguration.Parameters = make(map[string]string)
-	reqConfiguration.Query = make(map[string]string)
-	reqConfiguration.Method = callInfo.Method
-	mapBody := make(map[string]interface{})
-
-	processFields(callInfo, specFields, reqConfiguration, mapBody)
-	processFields(callInfo, statusFields, reqConfiguration, mapBody)
-	reqConfiguration.Body = mapBody
-	return reqConfiguration
-}
-
-func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfiguration *restclient.RequestConfiguration, mapBody map[string]interface{}) {
-	for field, value := range fields {
-		if field == "" {
-			continue
-		}
-		if callInfo.ReqParams.Parameters.Contains(field) {
-			stringVal := fmt.Sprintf("%v", value)
-			if stringVal == "" && reqConfiguration.Parameters[field] != "" {
-				continue
-			}
-			reqConfiguration.Parameters[field] = stringVal
-		} else if callInfo.ReqParams.Query.Contains(field) {
-			stringVal := fmt.Sprintf("%v", value)
-			if stringVal == "" && reqConfiguration.Query[field] != "" {
-				continue
-			}
-			reqConfiguration.Query[field] = stringVal
-		} else if callInfo.ReqParams.Body.Contains(field) {
-			if mapBody[field] == nil {
-				mapBody[field] = value
-			}
-		}
-	}
-}
-
-// isCRUpdated checks if the CR was updated by comparing the fields in the CR with the response from the API call, if existing cr fields are different from the response, it returns false
-func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (ComparisonResult, error) {
-	m, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
-	if err != nil {
-		return ComparisonResult{
-			IsEqual: false,
-			Reason: &Reason{
-				Reason: "error getting spec fields",
-			},
-		}, fmt.Errorf("error getting spec fields: %w", err)
-	}
-
-	return compareExisting(m, rm)
-}
 
 type Reason struct {
 	Reason      string
@@ -151,7 +27,7 @@ func (r ComparisonResult) String() string {
 }
 
 // compareExisting recursively compares fields between two maps and logs differences.
-func compareExisting(mg map[string]interface{}, rm map[string]interface{}, path ...string) (ComparisonResult, error) {
+func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path ...string) (ComparisonResult, error) {
 	for key, value := range mg {
 		currentPath := append(path, key)
 		pathStr := fmt.Sprintf("%v", currentPath)
@@ -160,8 +36,6 @@ func compareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 		if !ok {
 			continue
 		}
-
-		// fmt.Println("Comparing", pathStr, value, rmValue)
 
 		if reflect.TypeOf(value).Kind() != reflect.TypeOf(rmValue).Kind() {
 			return ComparisonResult{
@@ -178,7 +52,6 @@ func compareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 		case reflect.Map:
 			mgMap, ok1 := value.(map[string]interface{})
 			if !ok1 {
-				// fmt.Printf("Type assertion failed for map at '%s'\n", pathStr)
 				return ComparisonResult{
 					IsEqual: false,
 					Reason: &Reason{
@@ -190,7 +63,6 @@ func compareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 			}
 			rmMap, ok2 := rmValue.(map[string]interface{})
 			if !ok2 {
-				// fmt.Printf("Type assertion failed for map at '%s'\n", pathStr)
 				return ComparisonResult{
 					IsEqual: false,
 					Reason: &Reason{
@@ -200,7 +72,7 @@ func compareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 					},
 				}, fmt.Errorf("type assertion failed for map at %s", pathStr)
 			}
-			res, err := compareExisting(mgMap, rmMap, currentPath...)
+			res, err := CompareExisting(mgMap, rmMap, currentPath...)
 			if err != nil {
 				return ComparisonResult{
 					IsEqual: false,
@@ -212,7 +84,6 @@ func compareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 				}, err
 			}
 			if !res.IsEqual {
-				// fmt.Printf("Values differ at '%s'\n", pathStr)
 				return ComparisonResult{
 					IsEqual: false,
 					Reason: &Reason{
@@ -273,7 +144,7 @@ func compareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 							},
 						}, fmt.Errorf("type assertion failed for map at %s", pathStr)
 					}
-					res, err := compareExisting(mgMap, rmMap, currentPath...)
+					res, err := CompareExisting(mgMap, rmMap, currentPath...)
 					if err != nil {
 						return ComparisonResult{
 							IsEqual: false,
@@ -320,7 +191,6 @@ func compareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 				}, err
 			}
 			if !ok {
-				// fmt.Printf("Values differ at '%s' %s %s\n", pathStr, value, rmValue)
 				return ComparisonResult{
 					IsEqual: false,
 					Reason: &Reason{
@@ -396,51 +266,4 @@ func compareAny(a any, b any) (bool, error) {
 	default:
 		return reflect.DeepEqual(a, b), nil
 	}
-}
-
-// populateStatusFields populates the status fields in the mg object with the values from the body
-func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured, body map[string]interface{}) error {
-	for k, v := range body {
-		for _, identifier := range clientInfo.Resource.Identifiers {
-			if k == identifier {
-				stringValue, err := text.GenericToString(v)
-				if err != nil {
-					log.Err(err).Msg("Converting value to string")
-					return err
-				}
-				err = unstructured.SetNestedField(mg.Object, stringValue, "status", identifier)
-				if err != nil {
-					log.Err(err).Msg("Setting identifier")
-					return err
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// tries to find the resource in the cluster, with the given statusFields and specFields values, if it is able to validate the GET request, returns true
-func isResourceKnown(cli *restclient.UnstructuredClient, log logging.Logger, clientInfo *getter.Info, statusFields map[string]interface{}, specFields map[string]interface{}) bool {
-	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Get)
-	if apiCall == nil {
-		return false
-	}
-	if err != nil {
-		log.Debug("Building API call", "error", err)
-		return false
-	}
-	reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)
-	if reqConfiguration == nil {
-		return false
-	}
-
-	actionGetMethod := "GET"
-	for _, descr := range clientInfo.Resource.VerbsDescription {
-		if strings.EqualFold(descr.Action, apiaction.Get.String()) {
-			actionGetMethod = descr.Method
-		}
-	}
-
-	return cli.ValidateRequest(actionGetMethod, callInfo.Path, reqConfiguration.Parameters, reqConfiguration.Query) == nil
 }

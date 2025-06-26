@@ -297,12 +297,12 @@ func TestCallWithRecorder(t *testing.T) {
 			require.NoError(t, err)
 
 			// We expect nil for 204 and 304 responses and no error
-			if tt.expected == nil {
-				assert.Nil(t, result)
-				return
-			}
+			// if tt.expected == nil {
+			// 	assert.Nil(t, result)
+			// 	return
+			// }
 
-			if result == nil {
+			if result.ResponseBody == nil {
 				assert.Nil(t, tt.expected)
 				return
 			}

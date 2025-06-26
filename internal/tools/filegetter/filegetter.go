@@ -51,7 +51,7 @@ func (cli *Filegetter) GetFile(ctx context.Context, dst string, src string, auth
 		// Create a new request
 		req, err := http.NewRequest("GET", src, nil)
 		if err != nil {
-			return fmt.Errorf("error creating request: %v", err)
+			return fmt.Errorf("creating request: %v", err)
 		}
 
 		// Add authentication if provided
@@ -67,7 +67,7 @@ func (cli *Filegetter) GetFile(ctx context.Context, dst string, src string, auth
 		// Send the request
 		resp, err := cli.Client.Do(req)
 		if err != nil {
-			return fmt.Errorf("error downloading file: %v", err)
+			return fmt.Errorf("downloading file: %v", err)
 		}
 		defer resp.Body.Close()
 
@@ -96,12 +96,12 @@ func (cli *Filegetter) GetFile(ctx context.Context, dst string, src string, auth
 			Resource: "configmaps",
 		}).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
-			return fmt.Errorf("error getting configmap: %v", err)
+			return fmt.Errorf("getting configmap: %v", err)
 		}
 
 		err = runtime.DefaultUnstructuredConverter.FromUnstructured(uns.Object, &cm)
 		if err != nil {
-			return fmt.Errorf("error getting configmap: %v", err)
+			return fmt.Errorf("getting configmap: %v", err)
 		}
 
 		data, ok := cm.Data[key]
@@ -114,7 +114,7 @@ func (cli *Filegetter) GetFile(ctx context.Context, dst string, src string, auth
 		// Open local file
 		file, err := os.Open(src)
 		if err != nil {
-			return fmt.Errorf("error opening local file: %v - %s", err, src)
+			return fmt.Errorf("opening local file: %v - %s", err, src)
 		}
 		defer file.Close()
 		reader = file
@@ -123,14 +123,14 @@ func (cli *Filegetter) GetFile(ctx context.Context, dst string, src string, auth
 	// Create the destination file
 	dstFile, err := os.Create(dst)
 	if err != nil {
-		return fmt.Errorf("error creating destination file: %v", err)
+		return fmt.Errorf("creating destination file: %v", err)
 	}
 	defer dstFile.Close()
 
 	// Copy the contents
 	_, err = io.Copy(dstFile, reader)
 	if err != nil {
-		return fmt.Errorf("error writing to destination file: %v", err)
+		return fmt.Errorf("writing to destination file: %v", err)
 	}
 
 	return nil

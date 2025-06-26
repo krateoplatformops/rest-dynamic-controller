@@ -8,6 +8,7 @@ spec:
   resourceGroup: sample.krateo.io
   resource:
     identifiers:
+    - id
     - name
     kind: Sample
     verbsDescription:
@@ -16,13 +17,13 @@ spec:
       path: /resource
     - action: delete
       method: DELETE
-      path: /resource
+      path: /resource/{id}
     - action: get
       method: GET
-      path: /resource
+      path: /resource/{id}
     - action: findby
       method: GET
-      path: /resources
-    - action: update
-      method: PATCH
       path: /resource
+    - action: update
+      method: PUT
+      path: /resource/{id}

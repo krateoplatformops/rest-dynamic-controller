@@ -1,0 +1,286 @@
+openapi: 3.0.3
+info:
+  title: Mock Resource API
+  version: "1.0"
+  description: API for managing mock resources, used for integration testing.
+servers:
+  - url: http://localhost:30007
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Server health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  time:
+                    type: string
+                  resources_count:
+                    type: integer
+                  simulate_errors:
+                    type: boolean
+                  auth_failures:
+                    type: boolean
+                  async_operations:
+                    type: boolean
+                  response_delay:
+                    type: string
+  /admin/config:
+    post:
+      summary: Configure server behavior for tests
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                simulateErrors:
+                  type: boolean
+                responseDelayMs:
+                  type: integer
+                authFailures:
+                  type: boolean
+                asyncOperations:
+                  type: boolean
+      responses:
+        '200':
+          description: Configuration updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  config:
+                    type: object
+  /resource:
+    get:
+      summary: List resources
+      parameters:
+        - in: query
+          name: name
+          schema:
+            type: string
+          required: false
+          description: Filter by resource name
+      responses:
+        '200':
+          description: List of resources
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Resource'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Resource'
+                      count:
+                        type: integer
+        '401':
+          description: Unauthorized
+        '404':
+          description: Resource not found
+    post:
+      summary: Create a new resource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Resource'
+      responses:
+        '201':
+          description: Resource created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        '202':
+          description: Accepted (async operation)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operationId:
+                    type: string
+                  status:
+                    type: string
+                  resource:
+                    $ref: '#/components/schemas/Resource'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '409':
+          description: Resource already exists
+  /resource/{id}:
+    get:
+      summary: Get a resource by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Resource found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Resource not found
+    put:
+      summary: Update a resource by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Resource'
+      responses:
+        '200':
+          description: Resource updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        '202':
+          description: Accepted (async operation)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operationId:
+                    type: string
+                  status:
+                    type: string
+                  resource:
+                    $ref: '#/components/schemas/Resource'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '404':
+          description: Resource not found
+    patch:
+      summary: Patch a resource by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Resource patched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '404':
+          description: Resource not found
+    delete:
+      summary: Delete a resource by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Resource deleted
+        '202':
+          description: Accepted (async operation)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operationId:
+                    type: string
+                  status:
+                    type: string
+        '401':
+          description: Unauthorized
+        '404':
+          description: Resource not found
+  /status/{code}:
+    get:
+      summary: Return a specific HTTP status code for testing
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema:
+            type: integer
+      responses:
+        'default':
+          description: Custom status code response
+          content:
+            application/json:
+              schema:
+                type: object
+components:
+  schemas:
+    Resource:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - name
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer

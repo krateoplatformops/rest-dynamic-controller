@@ -1,0 +1,13 @@
+kind: Sample
+apiVersion: sample.krateo.io/v1alpha1
+metadata:
+  name: sample-async-get
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  id: "123"
+  name: sample-async-get
+  description: Sample with async operations for GET requests
+  authenticationRefs:
+    bearerAuthRef: sample-auth-sec

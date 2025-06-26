@@ -1,0 +1,12 @@
+kind: Sample
+apiVersion: sample.krateo.io/v1alpha1
+metadata:
+  name: sample-async-1
+  namespace: default
+  annotations:
+    krateo.io/connector-verbose: "true"
+spec:
+  name: sample-async-1
+  description: Sample 1 with async operations
+  authenticationRefs:
+    bearerAuthRef: sample-auth-sec
