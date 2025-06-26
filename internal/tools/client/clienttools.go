@@ -87,6 +87,14 @@ func getValidResponseCode(codes *orderedmap.Map[string, *v3.Response]) ([]int, e
 	return validCodes, nil
 }
 
+type UnstructuredClientInterface interface {
+	ValidateRequest(httpMethod string, path string, parameters map[string]string, query map[string]string) error
+	RequestedBody(httpMethod string, path string) (bodys stringset.StringSet, err error)
+	RequestedParams(httpMethod string, path string) (parameters stringset.StringSet, query stringset.StringSet, err error)
+	FindBy(ctx context.Context, cli *http.Client, path string, conf *RequestConfiguration) (Response, error)
+	Call(ctx context.Context, cli *http.Client, path string, conf *RequestConfiguration) (Response, error)
+}
+
 type UnstructuredClient struct {
 	IdentifierFields []string
 	SpecFields       *unstructured.Unstructured
@@ -107,12 +115,12 @@ func (u *UnstructuredClient) isInSpecFields(field, value string) (bool, error) {
 	fields := strings.Split(field, ".")
 	specs, err := unstructuredtools.GetFieldsFromUnstructured(u.SpecFields, "spec")
 	if err != nil {
-		return false, fmt.Errorf("error getting fields from unstructured: %w", err)
+		return false, fmt.Errorf("getting fields from unstructured: %w", err)
 	}
 
 	val, ok, err := unstructured.NestedFieldCopy(specs, fields...)
 	if err != nil {
-		return false, fmt.Errorf("error getting nested field: %w", err)
+		return false, fmt.Errorf("getting nested field: %w", err)
 	}
 	if !ok {
 		return false, nil
@@ -150,6 +158,7 @@ func (u *UnstructuredClient) ValidateRequest(httpMethod string, path string, par
 	return nil
 }
 
+// RequestedBody is a method that returns the body parameters for a given HTTP method and path.
 func (u *UnstructuredClient) RequestedBody(httpMethod string, path string) (bodyParams stringset.StringSet, err error) {
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {
@@ -216,6 +225,7 @@ func populateFromAllOf(schema *base.Schema) {
 	}
 }
 
+// RequestedParams is a method that returns the parameters and query parameters for a given HTTP method and path.
 func (u *UnstructuredClient) RequestedParams(httpMethod string, path string) (parameters stringset.StringSet, query stringset.StringSet, err error) {
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {

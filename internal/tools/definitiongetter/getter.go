@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/client"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/text"
+	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -76,6 +76,10 @@ type Getter interface {
 }
 
 func Dynamic(cfg *rest.Config, pluralizer pluralizer.PluralizerInterface) (Getter, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("rest config is nil")
+	}
+
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		return nil, err
@@ -97,7 +101,7 @@ type dynamicGetter struct {
 func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 	gvr, err := g.pluralizer.GVKtoGVR(un.GroupVersionKind())
 	if err != nil {
-		return nil, fmt.Errorf("error getting GVR for '%v' in namespace: %s", un.GetKind(), un.GetNamespace())
+		return nil, fmt.Errorf("getting GVR for '%v' in namespace: %s", un.GetKind(), un.GetNamespace())
 	}
 
 	gvrForDefinitions := schema.GroupVersionResource{
@@ -110,7 +114,7 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 		// Namespace(un.GetNamespace()).
 		List(context.Background(), metav1.ListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("error getting definitions for '%v' in namespace: %s - %w", gvr.String(), un.GetNamespace(), err)
+		return nil, fmt.Errorf("getting definitions for '%v' in namespace: %s - %w", gvr.String(), un.GetNamespace(), err)
 	}
 	if len(all.Items) == 0 {
 		return nil, fmt.Errorf("no definitions found for '%v' in namespace: %s", gvr, un.GetNamespace())
@@ -187,7 +191,7 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 func (g *dynamicGetter) setAuth(un *unstructured.Unstructured, info *Info) error {
 	gvr, err := g.pluralizer.GVKtoGVR(un.GroupVersionKind())
 	if err != nil {
-		return fmt.Errorf("error getting GVR for '%v' in namespace: %s", un.GetKind(), un.GetNamespace())
+		return fmt.Errorf("getting GVR for '%v' in namespace: %s", un.GetKind(), un.GetNamespace())
 	}
 
 	var authRef string
@@ -195,7 +199,7 @@ func (g *dynamicGetter) setAuth(un *unstructured.Unstructured, info *Info) error
 
 	authenticationRefsMap, ok, err := unstructured.NestedStringMap(un.Object, "spec", "authenticationRefs")
 	if err != nil {
-		return fmt.Errorf("error getting spec.authenticationRefs for '%v' in namespace: %s", gvr, un.GetNamespace())
+		return fmt.Errorf("getting spec.authenticationRefs for '%v' in namespace: %s", gvr, un.GetNamespace())
 	}
 	if !ok {
 		return nil
@@ -204,7 +208,7 @@ func (g *dynamicGetter) setAuth(un *unstructured.Unstructured, info *Info) error
 	for key := range authenticationRefsMap {
 		authRef, ok, err = unstructured.NestedString(un.Object, "spec", "authenticationRefs", key)
 		if err != nil {
-			return fmt.Errorf("error getting spec.authenticationRefs.%s for '%v' in namespace: %s", key, gvr, un.GetNamespace())
+			return fmt.Errorf("getting spec.authenticationRefs.%s for '%v' in namespace: %s", key, gvr, un.GetNamespace())
 		}
 		if ok {
 			authType, err = restclient.ToType(strings.Split(key, "AuthRef")[0])
@@ -223,14 +227,14 @@ func (g *dynamicGetter) setAuth(un *unstructured.Unstructured, info *Info) error
 
 	gvrForAuthentication, err := g.pluralizer.GVKtoGVR(gvkForAuthentication)
 	if err != nil {
-		return fmt.Errorf("error getting GVR for '%v' in namespace: %s", gvkForAuthentication.Kind, un.GetNamespace())
+		return fmt.Errorf("getting GVR for '%v' in namespace: %s", gvkForAuthentication.Kind, un.GetNamespace())
 	}
 
 	auth, err := g.dynamicClient.Resource(gvrForAuthentication).
 		Namespace(un.GetNamespace()).
 		Get(context.Background(), authRef, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("error getting authentication for '%v' in namespace: %s - %w", gvr, un.GetNamespace(), err)
+		return fmt.Errorf("getting authentication for '%v' in namespace: %s - %w", gvr, un.GetNamespace(), err)
 	}
 
 	return parseAuthentication(auth, authType, g.dynamicClient, info)
@@ -261,7 +265,7 @@ func parseAuthentication(un *unstructured.Unstructured, authType restclient.Auth
 			Key:       passwordRef["key"],
 		})
 		if err != nil {
-			return fmt.Errorf("error getting password for 'apiVersion: %v, kind: %v' in namespace: %s - %w", un.GetAPIVersion(), un.GetKind(), un.GetNamespace(), err)
+			return fmt.Errorf("getting password for 'apiVersion: %v, kind: %v' in namespace: %s - %w", un.GetAPIVersion(), un.GetKind(), un.GetNamespace(), err)
 		}
 
 		info.SetAuth = func(req *http.Request) {
@@ -283,7 +287,7 @@ func parseAuthentication(un *unstructured.Unstructured, authType restclient.Auth
 			Key:       tokenRef["key"],
 		})
 		if err != nil {
-			return fmt.Errorf("error getting token for 'apiVersion: %v, kind: %v' in namespace: %s - %w", un.GetAPIVersion(), un.GetKind(), un.GetNamespace(), err)
+			return fmt.Errorf("getting token for 'apiVersion: %v, kind: %v' in namespace: %s - %w", un.GetAPIVersion(), un.GetKind(), un.GetNamespace(), err)
 		}
 
 		info.SetAuth = func(req *http.Request) {
@@ -315,7 +319,17 @@ func GetSecret(ctx context.Context, client dynamic.Interface, secretKeySelector 
 	if err != nil {
 		return "", err
 	}
-	bsec := data[secretKeySelector.Key].(string)
+	// Check if the key exists in the data
+	value, exists := data[secretKeySelector.Key]
+	if !exists {
+		return "", fmt.Errorf("key %s not found in secret %s/%s", secretKeySelector.Key, secretKeySelector.Namespace, secretKeySelector.Name)
+	}
+
+	// Check if the value is a string
+	bsec, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("value for key %s in secret %s/%s is not a string", secretKeySelector.Key, secretKeySelector.Namespace, secretKeySelector.Name)
+	}
 	bkey, err := base64.StdEncoding.DecodeString(bsec)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode secret key: %w", err)

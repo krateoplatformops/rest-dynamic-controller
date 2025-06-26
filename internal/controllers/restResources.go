@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"net/http"
 
-	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/client"
 	customcondition "github.com/krateoplatformops/rest-dynamic-controller/internal/controllers/condition"
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/apiaction"
-	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
+	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client/apiaction"
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client/builder"
+	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
@@ -33,11 +34,13 @@ func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter, plurali
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		log.Debug("Creating dynamic client", "error", err)
+		return nil
 	}
 
 	dis, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
 		log.Debug("Creating discovery client", "error", err)
+		return nil
 	}
 
 	return &handler{
@@ -109,11 +112,12 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		log.Debug("Error getting status.", "error", err)
 	}
 
-	var response *restclient.Response
-	isKnown := isResourceKnown(cli, log, clientInfo, statusFields, specFields)
+	var response restclient.Response
+	// Tries to tries to build the GET API Call, with the given statusFields and specFields values, if it is able to validate the GET request, returns true
+	isKnown := builder.IsResourceKnown(cli, clientInfo, statusFields, specFields)
 	if isKnown {
 		// Getting the external resource by its identifier
-		apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Get)
+		apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Get)
 		if apiCall == nil || callInfo == nil {
 			log.Info("API action get not found", "action", apiaction.Update)
 			return controller.ExternalObservation{}, fmt.Errorf("API action get not found for %s", apiaction.Get)
@@ -122,7 +126,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Building API call", "error", err)
 			return controller.ExternalObservation{}, err
 		}
-		reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)
+		reqConfiguration := builder.BuildCallConfig(callInfo, statusFields, specFields)
 		if reqConfiguration == nil {
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
@@ -148,7 +152,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			return controller.ExternalObservation{}, err
 		}
 	} else {
-		apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.FindBy)
+		apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.FindBy)
 		if apiCall == nil {
 			if !unstructuredtools.IsConditionSet(mg, condition.Creating()) && !unstructuredtools.IsConditionSet(mg, condition.Available()) {
 				log.Debug("External resource is being created", "kind", mg.GetKind())
@@ -178,7 +182,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Building API call", "error", err)
 			return controller.ExternalObservation{}, err
 		}
-		reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)
+		reqConfiguration := builder.BuildCallConfig(callInfo, statusFields, specFields)
 		if reqConfiguration == nil {
 			log.Debug("Building call configuration", "error", "error building call configuration")
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
@@ -206,7 +210,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	}
 
 	// Response can be nil if the API does not return anything on get with a proper status code (204 No Content, 304 Not Modified).
-	if response == nil {
+	if response.ResponseBody == nil {
 		cond := condition.Available()
 		cond.Message = "Resource is assumed to be up-to-date. Returned body is nil."
 		err = unstructuredtools.SetConditions(mg, cond)
@@ -317,7 +321,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("Getting spec", "error", err)
 		return err
 	}
-	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Create)
+	apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Create)
 	if err != nil {
 		log.Debug("Building API call", "error", err)
 		return err
@@ -326,14 +330,14 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Info("API action create not found", "action", apiaction.Update)
 		return nil
 	}
-	reqConfiguration := BuildCallConfig(callInfo, nil, specFields)
+	reqConfiguration := builder.BuildCallConfig(callInfo, nil, specFields)
 	response, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
 		log.Debug("Performing REST call", "error", err)
 		return err
 	}
 
-	if response != nil {
+	if response.ResponseBody != nil {
 		body := response.ResponseBody
 		b, ok := body.(map[string]interface{})
 		if !ok {
@@ -407,7 +411,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("Getting spec", "error", err)
 		return err
 	}
-	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Update)
+	apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Update)
 	if err != nil {
 		log.Debug("Building API call", "error", err)
 		return err
@@ -422,15 +426,14 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("External resource not created yet", "kind", mg.GetKind())
 		return err
 	}
-	reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)
+	reqConfiguration := builder.BuildCallConfig(callInfo, statusFields, specFields)
 	response, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
 		log.Debug("Performing REST call", "error", err)
 		return err
 	}
 
-	// Body can be empty if the API does not return anything on update with a proper status code (204 No Content, 304 Not Modified).
-	if response != nil {
+	if response.ResponseBody != nil {
 		body := response.ResponseBody
 		b, ok := body.(map[string]interface{})
 		if !ok {
@@ -445,21 +448,6 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		}
 	}
 	log.Debug("Updating external resource", "kind", mg.GetKind())
-
-	if response.IsPending() {
-		log.Debug("External resource is pending", "kind", mg.GetKind())
-		err = unstructuredtools.SetConditions(mg, customcondition.Pending())
-		if err != nil {
-			log.Debug("Setting condition", "error", err)
-			return err
-		}
-	} else {
-		err = unstructuredtools.SetConditions(mg, condition.Creating())
-		if err != nil {
-			log.Debug("Setting condition", "error", err)
-			return err
-		}
-	}
 
 	mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
@@ -521,7 +509,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("Getting status", "error", err)
 		return err
 	}
-	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Delete)
+	apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Delete)
 	if err != nil {
 		log.Debug("Building API call", "error", err)
 		return err
@@ -530,9 +518,9 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Info("API action delete not found", "action", apiaction.Update)
 		return nil
 	}
-	reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)
+	reqConfiguration := builder.BuildCallConfig(callInfo, statusFields, specFields)
 	if reqConfiguration == nil {
-		return fmt.Errorf("error building call configuration")
+		return fmt.Errorf("building call configuration")
 	}
 
 	_, err = apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)

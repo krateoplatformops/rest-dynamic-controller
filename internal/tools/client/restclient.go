@@ -22,21 +22,24 @@ type Response struct {
 }
 
 func (r *Response) IsPending() bool {
+	if r == nil {
+		return false
+	}
 	return r.statusCode == http.StatusProcessing || r.statusCode == http.StatusContinue || r.statusCode == http.StatusAccepted
 }
 
-func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (*Response, error) {
+func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (Response, error) {
 	uri := buildPath(u.Server, path, opts.Parameters, opts.Query)
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {
-		return nil, fmt.Errorf("path not found: %s", path)
+		return Response{}, fmt.Errorf("path not found: %s", path)
 	}
 	httpMethod := string(opts.Method)
 	ops := pathItem.GetOperations()
 	if ops != nil {
 		op, ok := ops.Get(strings.ToLower(httpMethod))
 		if !ok {
-			return nil, fmt.Errorf("operation not found for method %s at path %s", httpMethod, path)
+			return Response{}, fmt.Errorf("operation not found for method %s at path %s", httpMethod, path)
 		}
 
 		if len(op.Servers) > 0 {
@@ -47,23 +50,22 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 
 	err := u.ValidateRequest(httpMethod, path, opts.Parameters, opts.Query)
 	if err != nil {
-		return nil, err
+		return Response{}, err
 	}
 
 	var response any
-
 	var payload []byte
 
 	headers := make(http.Header)
 	payload = nil
 	m, ok := opts.Body.(map[string]any)
 	if !ok && opts.Body != nil {
-		return nil, fmt.Errorf("invalid body type: %T", opts.Body)
+		return Response{}, fmt.Errorf("invalid body type: %T", opts.Body)
 	}
 	if len(m) != 0 {
 		jsonBody, err := json.Marshal(opts.Body)
 		if err != nil {
-			return nil, err
+			return Response{}, err
 		}
 		payload = jsonBody
 		headers.Set("Content-Type", "application/json")
@@ -90,21 +92,21 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 
 	resp, err := cli.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error making request: %w", err)
+		return Response{}, fmt.Errorf("making request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	getDoc, ok := pathItem.GetOperations().Get(strings.ToLower(httpMethod))
 	if !ok {
-		return nil, fmt.Errorf("operation not found: %s", httpMethod)
+		return Response{}, fmt.Errorf("operation not found: %s", httpMethod)
 	}
 	validStatusCodes, err := getValidResponseCode(getDoc.Responses.Codes)
 	if err != nil {
-		return nil, err
+		return Response{}, err
 	}
 
 	if !HasValidStatusCode(resp.StatusCode, validStatusCodes...) {
-		return nil, &StatusError{
+		return Response{}, &StatusError{
 			StatusCode: resp.StatusCode,
 			Inner:      fmt.Errorf("invalid status code: %d", resp.StatusCode),
 		}
@@ -114,7 +116,7 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 	// Just checking if resp.Body is nil does not work, as it can be non-nil with a zero-length body.
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return Response{}, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	defer resp.Body.Close()
@@ -127,33 +129,39 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 
 	// E.g. 200 but with no content, or 201 Created with no content (error case)
 	if len(bodyBytes) == 0 && !statusAllowsEmpty {
-		return nil, fmt.Errorf("response body is empty for unexpected status code %d", resp.StatusCode)
+		return Response{}, fmt.Errorf("response body is empty for unexpected status code %d", resp.StatusCode)
 	}
 
 	// For status codes that allow empty bodies (e.g., 204, 304), return nil directly, without going through handleResponse
 	if len(bodyBytes) == 0 && statusAllowsEmpty {
-		return nil, nil
+		return Response{
+			ResponseBody: nil,
+			statusCode:   resp.StatusCode,
+		}, nil
 	}
 
 	err = handleResponse(resp.Body, &response)
 	if err != nil {
-		return nil, fmt.Errorf("error handling response: %w", err)
+		return Response{}, fmt.Errorf("handling response: %w", err)
 	}
 
-	return &Response{
+	return Response{
 		ResponseBody: response,
 		statusCode:   resp.StatusCode,
 	}, nil
 }
 
 // It support both list and single item responses
-func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (*Response, error) {
+func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (Response, error) {
 	response, err := u.Call(ctx, cli, path, opts)
 	if err != nil {
-		return nil, err
+		return Response{}, err
 	}
-	if response == nil {
-		return nil, nil
+	if response.ResponseBody == nil {
+		return Response{}, &StatusError{
+			StatusCode: http.StatusNotFound,
+			Inner:      fmt.Errorf("item not found"),
+		}
 	}
 
 	list := response.ResponseBody
@@ -166,7 +174,7 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 	} else {
 		li, ok = list.(map[string]interface{})
 		if !ok {
-			return nil, fmt.Errorf("unexpected response type: %T", list)
+			return Response{}, fmt.Errorf("unexpected response type: %T", list)
 		}
 	}
 
@@ -185,16 +193,16 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 						if err != nil {
 							val, _, err := unstructured.NestedFieldNoCopy(itMap, idepath...)
 							if err != nil {
-								return nil, fmt.Errorf("error getting nested field: %w", err)
+								return Response{}, fmt.Errorf("getting nested field: %w", err)
 							}
 							responseValue = fmt.Sprintf("%v", val)
 						}
 						ok, err = u.isInSpecFields(ide, responseValue)
 						if err != nil {
-							return nil, err
+							return Response{}, err
 						}
 						if ok {
-							return &Response{
+							return Response{
 								ResponseBody: itMap,
 								statusCode:   response.statusCode,
 							}, nil
@@ -206,7 +214,7 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 			break
 		}
 	}
-	return nil, &StatusError{
+	return Response{}, &StatusError{
 		StatusCode: http.StatusNotFound,
 		Inner:      fmt.Errorf("item not found"),
 	}
@@ -244,12 +252,12 @@ func handleResponse(rc io.ReadCloser, response any) error {
 
 	yamlData, err := jsonToYAML(data)
 	if err != nil {
-		return fmt.Errorf("error converting JSON to YAML: %w", err)
+		return fmt.Errorf("converting JSON to YAML: %w", err)
 	}
 
 	err = rawyaml.Unmarshal(yamlData, response)
 	if err != nil {
-		return fmt.Errorf("error unmarshalling YAML response: %w", err)
+		return fmt.Errorf("unmarshalling YAML response: %w", err)
 	}
 	return nil
 }

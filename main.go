@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	restResources "github.com/krateoplatformops/rest-dynamic-controller/internal/controllers"
-	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/restclient"
+	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -77,16 +77,19 @@ func main() {
 	}
 	if err != nil {
 		log.Debug("Building kubeconfig", "error", err)
+		return
 	}
 
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		log.Debug("Creating dynamic client.", "error", err)
+		return
 	}
 
 	discovery, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
 		log.Debug("Creating discovery client.", "error", err)
+		return
 	}
 
 	cachedDisc := memory.NewMemCacheClient(discovery)
@@ -98,6 +101,7 @@ func main() {
 	swg, err = getter.Dynamic(cfg, pluralizer)
 	if err != nil {
 		log.Debug("Creating chart url info getter.", "error", err)
+		return
 	}
 
 	log.WithValues("build", Build).
@@ -113,6 +117,10 @@ func main() {
 		Info("Starting.", "serviceName", serviceName)
 
 	handler = restResources.NewHandler(cfg, log, swg, *pluralizer)
+	if handler == nil {
+		log.Debug("Creating handler for controller.", "error", "handler is nil")
+		return
+	}
 
 	controller := genctrl.New(genctrl.Options{
 		Discovery:      cachedDisc,
@@ -147,5 +155,6 @@ func main() {
 	err = controller.Run(ctx, *workers)
 	if err != nil {
 		log.Debug("Running controller.", "error", err)
+		return
 	}
 }

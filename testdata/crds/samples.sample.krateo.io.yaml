@@ -52,12 +52,25 @@ spec:
                   bearerAuthRef:
                     type: string
                 type: object
+              id:
+                type: string
               name:
                 type: string
               description:
                 type: string
+              status:
+                type: string
+              metadata:
+                type: object
+                additionalProperties:
+                  type: string
+              createdAt:
+                type: string
+              updatedAt:
+                type: string
             required:
             - authenticationRefs
+            - name
             type: object
           status:
             properties:
@@ -113,6 +126,8 @@ spec:
                     type: string
                 type: object
               name:
+                type: string
+              id:
                 type: string
             type: object
         type: object
