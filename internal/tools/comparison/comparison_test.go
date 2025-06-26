@@ -222,6 +222,99 @@ func TestCompareExisting(t *testing.T) {
 			expected:    false,
 			expectError: false,
 		},
+		{
+			name: "different numeric types but equal values",
+			mg: map[string]interface{}{
+				"value": int64(123),
+			},
+			rm: map[string]interface{}{
+				"value": int(123),
+			},
+			expected:    true,
+			expectError: false,
+		},
+		{
+			name: "different numeric types but equal values (2)",
+			mg: map[string]interface{}{
+				"value": int64(123),
+			},
+			rm: map[string]interface{}{
+				"value": float64(123),
+			},
+			expected:    true,
+			expectError: false,
+		},
+		{
+			name: "slice with different lengths",
+			mg: map[string]interface{}{
+				"slice": []interface{}{"a", "b"},
+			},
+			rm: map[string]interface{}{
+				"slice": []interface{}{"a", "b", "c"},
+			},
+			expected:    false,
+			expectError: false,
+		},
+		{
+			name: "slice with same maps in different order",
+			mg: map[string]interface{}{
+				"slice": []interface{}{
+					map[string]interface{}{"id": 1, "val": "a"},
+					map[string]interface{}{"id": 2, "val": "b"},
+				},
+			},
+			rm: map[string]interface{}{
+				"slice": []interface{}{
+					map[string]interface{}{"id": 2, "val": "b"},
+					map[string]interface{}{"id": 1, "val": "a"},
+				},
+			},
+			expected:    true,
+			expectError: false,
+		},
+		{
+			name: "slice with different maps",
+			mg: map[string]interface{}{
+				"slice": []interface{}{
+					map[string]interface{}{"id": 1, "val": "a"},
+					map[string]interface{}{"id": 2, "val": "b"},
+				},
+			},
+			rm: map[string]interface{}{
+				"slice": []interface{}{
+					map[string]interface{}{"id": 1, "val": "a"},
+					map[string]interface{}{"id": 3, "val": "c"},
+				},
+			},
+			expected:    false,
+			expectError: false,
+		},
+		{
+			name: "maps with nil value",
+			mg: map[string]interface{}{
+				"key1": "value1",
+				"key2": nil,
+			},
+			rm: map[string]interface{}{
+				"key1": "value1",
+				"key2": nil,
+			},
+			expected:    true,
+			expectError: false,
+		},
+		{
+			name: "both maps with all nil values",
+			mg: map[string]interface{}{
+				"key1": nil,
+				"key2": nil,
+			},
+			rm: map[string]interface{}{
+				"key1": nil,
+				"key2": nil,
+			},
+			expected:    true,
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {
