@@ -256,23 +256,6 @@ func TestCompareExisting(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "slice with same maps in different order",
-			mg: map[string]interface{}{
-				"slice": []interface{}{
-					map[string]interface{}{"id": 1, "val": "a"},
-					map[string]interface{}{"id": 2, "val": "b"},
-				},
-			},
-			rm: map[string]interface{}{
-				"slice": []interface{}{
-					map[string]interface{}{"id": 2, "val": "b"},
-					map[string]interface{}{"id": 1, "val": "a"},
-				},
-			},
-			expected:    true,
-			expectError: false,
-		},
-		{
 			name: "slice with different maps",
 			mg: map[string]interface{}{
 				"slice": []interface{}{

@@ -112,71 +112,96 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 		case reflect.Slice:
 			valueSlice, ok1 := value.([]interface{})
 			if !ok1 || reflect.TypeOf(rmValue).Kind() != reflect.Slice {
-				return ComparisonResult{IsEqual: false, Reason: &Reason{Reason: "values are not both slices or type assertion failed"}}, fmt.Errorf("values are not both slices or type assertion failed at %s", pathStr)
+				// fmt.Printf("Values are not both slices or type assertion failed at '%s'\n", pathStr)
+				return ComparisonResult{
+					IsEqual: false,
+					Reason: &Reason{
+						Reason:      "values are not both slices or type assertion failed",
+						FirstValue:  value,
+						SecondValue: rmValue,
+					},
+				}, fmt.Errorf("values are not both slices or type assertion failed at %s", pathStr)
 			}
 			rmSlice, ok2 := rmValue.([]interface{})
 			if !ok2 {
-				return ComparisonResult{IsEqual: false, Reason: &Reason{Reason: "type assertion failed for remote slice"}}, fmt.Errorf("type assertion failed for remote slice at %s", pathStr)
+				// fmt.Printf("Type assertion failed for slice at '%s'\n", pathStr)
+				return ComparisonResult{
+					IsEqual: false,
+					Reason: &Reason{
+						Reason:      "values are not both slices or type assertion failed",
+						FirstValue:  value,
+						SecondValue: rmValue,
+					},
+				}, fmt.Errorf("type assertion failed for slice at %s", pathStr)
 			}
 
 			if len(valueSlice) != len(rmSlice) {
 				return ComparisonResult{IsEqual: false, Reason: &Reason{Reason: "slice lengths are different"}}, nil
 			}
 
-			// If the slice is empty, they are equal.
+			// If the slice is empty, they are equal since they have the same length
 			if len(valueSlice) == 0 {
 				break
 			}
 
-			// Determine if we are comparing slices of maps or slices of primitives.
-			if _, ok := valueSlice[0].(map[string]interface{}); ok {
-				// Handling for slice of maps (set comparison)
-				matched := make([]bool, len(rmSlice))
-				for _, v := range valueSlice {
-					mgMap, ok := v.(map[string]interface{})
-					if !ok {
-						return ComparisonResult{IsEqual: false, Reason: &Reason{Reason: "local slice item is not a map, but expected to be"}}, nil
+			for i, v := range valueSlice {
+				if reflect.TypeOf(v).Kind() == reflect.Map {
+					mgMap, ok1 := v.(map[string]interface{})
+					if !ok1 {
+						// fmt.Printf("Type assertion failed for map at '%s'\n", pathStr)
+						return ComparisonResult{
+							IsEqual: false,
+							Reason: &Reason{
+								Reason:      "type assertion failed",
+								FirstValue:  value,
+								SecondValue: rmValue,
+							},
+						}, fmt.Errorf("type assertion failed for map at %s", pathStr)
 					}
-
-					foundMatch := false
-					for i, r := range rmSlice {
-						if matched[i] {
-							continue
-						}
-						rmMap, ok := r.(map[string]interface{})
-						if !ok {
-							continue
-						}
-
-						// We need recursive comparison for maps
-						res, err := CompareExisting(mgMap, rmMap, currentPath...)
-						if err == nil && res.IsEqual {
-							matched[i] = true
-							foundMatch = true
-							break
-						}
+					rmMap, ok2 := rmSlice[i].(map[string]interface{})
+					if !ok2 {
+						// fmt.Printf("Type assertion failed for map at '%s'\n", pathStr)
+						return ComparisonResult{
+							IsEqual: false,
+							Reason: &Reason{
+								Reason:      "type assertion failed",
+								FirstValue:  value,
+								SecondValue: rmValue,
+							},
+						}, fmt.Errorf("type assertion failed for map at %s", pathStr)
 					}
-
-					if !foundMatch {
-						return ComparisonResult{IsEqual: false, Reason: &Reason{Reason: "item not found in remote slice"}}, nil
+					res, err := CompareExisting(mgMap, rmMap, currentPath...)
+					if err != nil {
+						return ComparisonResult{
+							IsEqual: false,
+							Reason: &Reason{
+								Reason:      "error comparing maps",
+								FirstValue:  value,
+								SecondValue: rmValue,
+							},
+						}, err
 					}
-				}
-			} else {
-				// Handling for slice of primitives
-				// We build a count map for both slices to compare their elements.
-				// This allows us to handle cases where the order of elements may differ.
-				mgCounts := make(map[interface{}]int)
-				for _, item := range valueSlice {
-					mgCounts[item]++
-				}
-
-				rmCounts := make(map[interface{}]int)
-				for _, item := range rmSlice {
-					rmCounts[item]++
-				}
-
-				if !reflect.DeepEqual(mgCounts, rmCounts) {
-					return ComparisonResult{IsEqual: false, Reason: &Reason{Reason: "primitive slices have different elements"}}, nil
+					if !res.IsEqual {
+						// fmt.Printf("Values differ at '%s'\n", pathStr)
+						return ComparisonResult{
+							IsEqual: false,
+							Reason: &Reason{
+								Reason:      "values differ",
+								FirstValue:  value,
+								SecondValue: rmValue,
+							},
+						}, nil
+					}
+				} else if v != rmSlice[i] {
+					// fmt.Printf("Values differ at '%s'\n", pathStr)
+					return ComparisonResult{
+						IsEqual: false,
+						Reason: &Reason{
+							Reason:      "values differ",
+							FirstValue:  value,
+							SecondValue: rmValue,
+						},
+					}, nil
 				}
 			}
 		default:
