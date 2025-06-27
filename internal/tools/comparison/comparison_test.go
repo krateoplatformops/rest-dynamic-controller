@@ -1,6 +1,7 @@
 package comparison
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -44,37 +45,6 @@ func TestComparisonResult_String(t *testing.T) {
 	}
 }
 
-func TestNumberCaster(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    interface{}
-		expected int64
-	}{
-		{"int", int(42), 42},
-		{"int8", int8(42), 42},
-		{"int16", int16(42), 42},
-		{"int32", int32(42), 42},
-		{"int64", int64(42), 42},
-		{"uint", uint(42), 42},
-		{"uint8", uint8(42), 42},
-		{"uint16", uint16(42), 42},
-		{"uint32", uint32(42), 42},
-		{"uint64", uint64(42), 42},
-		{"float32", float32(42.7), 42},
-		{"float64", float64(42.7), 42},
-		{"string", "invalid", -999999},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := numberCaster(tt.input)
-			if result != tt.expected {
-				t.Errorf("expected %d, got %d", tt.expected, result)
-			}
-		})
-	}
-}
-
 func TestCompareAny(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -88,6 +58,10 @@ func TestCompareAny(t *testing.T) {
 		{"int and float equal", 42, 42.0, true, false},
 		{"equal strings", "hello", "hello", true, false},
 		{"different strings", "hello", "world", false, false},
+		{"equal floats", 3.14, 3.14, true, false},
+		{"different floats", 3.14, 2.71, false, false},
+		{"float equal with different precision", float64(42.7), float32(42.7), true, false}, {"int and float different", 42, 42.1, false, false},
+		{"equal booleans", true, true, true, false},
 		{"equal bools", true, true, true, false},
 		{"different bools", true, false, false, false},
 		{"equal slices", []int{1, 2, 3}, []int{1, 2, 3}, true, false},
@@ -96,12 +70,9 @@ func TestCompareAny(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := compareAny(tt.a, tt.b)
-			if tt.expectError && err == nil {
+			result := compareAny(tt.a, tt.b)
+			if tt.expectError {
 				t.Error("expected error but got none")
-			}
-			if !tt.expectError && err != nil {
-				t.Errorf("unexpected error: %v", err)
 			}
 			if result != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, result)
@@ -144,7 +115,7 @@ func TestCompareExisting(t *testing.T) {
 			mg:          map[string]interface{}{"key1": "value1"},
 			rm:          map[string]interface{}{"key1": 42},
 			expected:    false,
-			expectError: true,
+			expectError: false,
 		},
 		{
 			name: "nested maps equal",
@@ -186,6 +157,23 @@ func TestCompareExisting(t *testing.T) {
 			},
 			rm: map[string]interface{}{
 				"slice": []interface{}{"a", "b", "d"},
+			},
+			expected:    false,
+			expectError: false,
+		},
+		{
+			name: "slice with same maps in different order",
+			mg: map[string]interface{}{
+				"slice": []interface{}{
+					map[string]interface{}{"id": 1, "val": "a"},
+					map[string]interface{}{"id": 2, "val": "b"},
+				},
+			},
+			rm: map[string]interface{}{
+				"slice": []interface{}{
+					map[string]interface{}{"id": 2, "val": "b"},
+					map[string]interface{}{"id": 1, "val": "a"},
+				},
 			},
 			expected:    false,
 			expectError: false,
@@ -245,6 +233,17 @@ func TestCompareExisting(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name: "different numeric types but equal values (3)",
+			mg: map[string]interface{}{
+				"value": int64(123),
+			},
+			rm: map[string]interface{}{
+				"value": float64(123.4),
+			},
+			expected:    false,
+			expectError: false,
+		},
+		{
 			name: "slice with different lengths",
 			mg: map[string]interface{}{
 				"slice": []interface{}{"a", "b"},
@@ -252,24 +251,18 @@ func TestCompareExisting(t *testing.T) {
 			rm: map[string]interface{}{
 				"slice": []interface{}{"a", "b", "c"},
 			},
-			expected:    false,
+			expected:    true, // this is considered true because the first map has all keys present in the second map
 			expectError: false,
 		},
 		{
-			name: "slice with same maps in different order",
+			name: "slice with different lengths",
 			mg: map[string]interface{}{
-				"slice": []interface{}{
-					map[string]interface{}{"id": 1, "val": "a"},
-					map[string]interface{}{"id": 2, "val": "b"},
-				},
+				"slice": []interface{}{"a", "b", "d"},
 			},
 			rm: map[string]interface{}{
-				"slice": []interface{}{
-					map[string]interface{}{"id": 2, "val": "b"},
-					map[string]interface{}{"id": 1, "val": "a"},
-				},
+				"slice": []interface{}{"a", "b", "c", "e"},
 			},
-			expected:    true,
+			expected:    false, // this is considered false because the first map does not have all keys present in the second map
 			expectError: false,
 		},
 		{
@@ -328,6 +321,315 @@ func TestCompareExisting(t *testing.T) {
 			}
 			if result.IsEqual != tt.expected {
 				t.Errorf("expected IsEqual=%v, got IsEqual=%v", tt.expected, result.IsEqual)
+			}
+		})
+	}
+}
+func TestCompareExisting_ErrorCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		mg          map[string]interface{}
+		rm          map[string]interface{}
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "map type assertion failure in mg",
+			mg: map[string]interface{}{
+				"nested": map[int]string{1: "invalid"}, // Not map[string]interface{}
+			},
+			rm: map[string]interface{}{
+				"nested": map[string]interface{}{"key": "value"},
+			},
+			expectError: true,
+			errorMsg:    "type assertion failed for map",
+		},
+		{
+			name: "map type assertion failure in rm",
+			mg: map[string]interface{}{
+				"nested": map[string]interface{}{"key": "value"},
+			},
+			rm: map[string]interface{}{
+				"nested": map[int]string{1: "invalid"}, // Not map[string]interface{}
+			},
+			expectError: true,
+			errorMsg:    "type assertion failed for map",
+		},
+		{
+			name: "slice type assertion failure - different types",
+			mg: map[string]interface{}{
+				"slice": []interface{}{"a", "b"},
+			},
+			rm: map[string]interface{}{
+				"slice": "not a slice",
+			},
+			expectError: true,
+			errorMsg:    "values are not both slices",
+		},
+		{
+			name: "slice type assertion failure in rm",
+			mg: map[string]interface{}{
+				"slice": []interface{}{"a", "b"},
+			},
+			rm: map[string]interface{}{
+				"slice": []string{"a", "b"}, // Not []interface{}
+			},
+			expectError: true,
+			errorMsg:    "type assertion failed for slice",
+		},
+		{
+			name: "slice with map type assertion failure in mg",
+			mg: map[string]interface{}{
+				"slice": []interface{}{
+					map[int]string{1: "invalid"}, // Not map[string]interface{}
+				},
+			},
+			rm: map[string]interface{}{
+				"slice": []interface{}{
+					map[string]interface{}{"key": "value"},
+				},
+			},
+			expectError: true,
+			errorMsg:    "type assertion failed for map",
+		},
+		{
+			name: "slice with map type assertion failure in rm",
+			mg: map[string]interface{}{
+				"slice": []interface{}{
+					map[string]interface{}{"key": "value"},
+				},
+			},
+			rm: map[string]interface{}{
+				"slice": []interface{}{
+					map[int]string{1: "invalid"}, // Not map[string]interface{}
+				},
+			},
+			expectError: true,
+			errorMsg:    "type assertion failed for map",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := CompareExisting(tt.mg, tt.rm)
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error but got none")
+				} else if tt.errorMsg != "" && !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("expected error message to contain %q, got %q", tt.errorMsg, err.Error())
+				}
+				if result.IsEqual {
+					t.Error("expected result to be not equal when error occurs")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestCompareExisting_SliceIndexOutOfBounds(t *testing.T) {
+	tests := []struct {
+		name     string
+		mg       map[string]interface{}
+		rm       map[string]interface{}
+		expected bool
+	}{
+		{
+			name: "slice with different lengths - mg longer",
+			mg: map[string]interface{}{
+				"slice": []interface{}{
+					map[string]interface{}{"key": "value1"},
+					map[string]interface{}{"key": "value2"},
+				},
+			},
+			rm: map[string]interface{}{
+				"slice": []interface{}{
+					map[string]interface{}{"key": "value1"},
+				},
+			},
+			expected: false, // This should cause an index out of bounds issue
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// This test should either handle the case gracefully or panic
+			// depending on the implementation
+			defer func() {
+				if r := recover(); r != nil {
+					// If it panics, that's a bug that should be fixed
+					t.Errorf("Function panicked: %v", r)
+				}
+			}()
+
+			result, err := CompareExisting(tt.mg, tt.rm)
+			if err != nil {
+				// Error is acceptable in this edge case
+				t.Logf("Got expected error for edge case: %v", err)
+			} else {
+				if result.IsEqual != tt.expected {
+					t.Errorf("expected IsEqual=%v, got IsEqual=%v", tt.expected, result.IsEqual)
+				}
+			}
+		})
+	}
+}
+
+func TestCompareExisting_NilHandling(t *testing.T) {
+	tests := []struct {
+		name     string
+		mg       map[string]interface{}
+		rm       map[string]interface{}
+		expected bool
+	}{
+		{
+			name: "one value nil, other not nil",
+			mg: map[string]interface{}{
+				"key": nil,
+			},
+			rm: map[string]interface{}{
+				"key": "not nil",
+			},
+			expected: false,
+		},
+		{
+			name: "first value not nil, second nil",
+			mg: map[string]interface{}{
+				"key": "not nil",
+			},
+			rm: map[string]interface{}{
+				"key": nil,
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := CompareExisting(tt.mg, tt.rm)
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if result.IsEqual != tt.expected {
+				t.Errorf("expected IsEqual=%v, got IsEqual=%v", tt.expected, result.IsEqual)
+			}
+		})
+	}
+}
+
+func TestCompareExisting_NestedErrors(t *testing.T) {
+	// Create a scenario where nested comparison returns an error
+	mg := map[string]interface{}{
+		"nested": map[string]interface{}{
+			"inner": map[int]string{1: "invalid"}, // This will cause type assertion to fail
+		},
+	}
+	rm := map[string]interface{}{
+		"nested": map[string]interface{}{
+			"inner": map[string]interface{}{"key": "value"},
+		},
+	}
+
+	result, err := CompareExisting(mg, rm)
+	if err == nil {
+		t.Error("expected error from nested comparison")
+	}
+	if result.IsEqual {
+		t.Error("expected result to be not equal when nested error occurs")
+	}
+	if result.Reason == nil {
+		t.Error("expected reason to be set when error occurs")
+	}
+	if result.Reason.Reason != "error comparing maps" {
+		t.Errorf("expected reason to be 'error comparing maps', got %q", result.Reason.Reason)
+	}
+}
+
+func TestCompareExisting_SliceNestedErrors(t *testing.T) {
+	// Create a scenario where slice nested comparison returns an error
+	mg := map[string]interface{}{
+		"slice": []interface{}{
+			map[string]interface{}{
+				"inner": map[int]string{1: "invalid"}, // This will cause type assertion to fail
+			},
+		},
+	}
+	rm := map[string]interface{}{
+		"slice": []interface{}{
+			map[string]interface{}{
+				"inner": map[string]interface{}{"key": "value"},
+			},
+		},
+	}
+
+	result, err := CompareExisting(mg, rm)
+	if err == nil {
+		t.Error("expected error from nested slice comparison")
+	}
+	if result.IsEqual {
+		t.Error("expected result to be not equal when nested error occurs")
+	}
+	if result.Reason == nil {
+		t.Error("expected reason to be set when error occurs")
+	}
+	if result.Reason.Reason != "error comparing maps" {
+		t.Errorf("expected reason to be 'error comparing maps', got %q", result.Reason.Reason)
+	}
+}
+
+func TestCompareAny_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        interface{}
+		b        interface{}
+		expected bool
+	}{
+		{
+			name:     "nil values",
+			a:        nil,
+			b:        nil,
+			expected: true,
+		},
+		{
+			name:     "one nil, one not nil",
+			a:        nil,
+			b:        "not nil",
+			expected: false,
+		},
+		{
+			name:     "complex types",
+			a:        []interface{}{1, 2, 3},
+			b:        []interface{}{1, 2, 3},
+			expected: true,
+		},
+		{
+			name:     "different complex types",
+			a:        []interface{}{1, 2, 3},
+			b:        []interface{}{1, 2, 4},
+			expected: false,
+		},
+		{
+			name:     "map comparison",
+			a:        map[string]interface{}{"key": "value"},
+			b:        map[string]interface{}{"key": "value"},
+			expected: true,
+		},
+		{
+			name:     "different maps",
+			a:        map[string]interface{}{"key": "value1"},
+			b:        map[string]interface{}{"key": "value2"},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := compareAny(tt.a, tt.b)
+			if result != tt.expected {
+				t.Errorf("expected %v, got %v", tt.expected, result)
 			}
 		})
 	}

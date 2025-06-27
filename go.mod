@@ -4,6 +4,8 @@ go 1.24.2
 
 require (
 	github.com/gobuffalo/flect v1.0.3
+	github.com/google/go-cmp v0.7.0
+	github.com/krateoplatformops/plumbing v0.4.0
 	github.com/krateoplatformops/snowplow v0.0.0-20250311104630-6e215130151f
 	github.com/krateoplatformops/unstructured-runtime v0.1.5
 	github.com/pb33f/libopenapi v0.21.8
@@ -34,13 +36,13 @@ require (
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/gnostic-models v0.6.9 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/itchyny/gojq v0.12.17 // indirect
+	github.com/itchyny/timefmt-go v0.1.6 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/krateoplatformops/plumbing v0.4.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

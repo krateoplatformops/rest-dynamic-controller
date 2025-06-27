@@ -3,6 +3,9 @@ package comparison
 import (
 	"fmt"
 	"reflect"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/krateoplatformops/plumbing/jqutil"
 )
 
 type Reason struct {
@@ -26,7 +29,12 @@ func (r ComparisonResult) String() string {
 	return fmt.Sprintf("ComparisonResult: IsEqual=false, Reason=%s, FirstValue=%v, SecondValue=%v", r.Reason.Reason, r.Reason.FirstValue, r.Reason.SecondValue)
 }
 
-// compareExisting recursively compares fields between two maps and logs differences.
+// CompareExisting recursively compares fields between two maps and logs differences.
+// If a field exists in the first map but not in the second, it is considered unequal.
+// If a field exist in the second map but not in the first, it is ignored.
+// If both maps have the same field, it compares their values.
+// Slices order is considered, so if the order of elements in slices is different, they are considered unequal.
+// If the values are maps or slices, it recursively compares them.
 func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path ...string) (ComparisonResult, error) {
 	for key, value := range mg {
 		currentPath := append(path, key)
@@ -51,17 +59,6 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 					SecondValue: rmValue,
 				},
 			}, nil
-		}
-
-		if !isNumeric(reflect.TypeOf(value).Kind()) && !isNumeric(reflect.TypeOf(rmValue).Kind()) && reflect.TypeOf(value).Kind() != reflect.TypeOf(rmValue).Kind() {
-			return ComparisonResult{
-				IsEqual: false,
-				Reason: &Reason{
-					Reason:      "types differ",
-					FirstValue:  value,
-					SecondValue: rmValue,
-				},
-			}, fmt.Errorf("types differ at %s - %s is different from %s", pathStr, reflect.TypeOf(value).Kind(), reflect.TypeOf(rmValue).Kind())
 		}
 
 		switch reflect.TypeOf(value).Kind() {
@@ -112,85 +109,97 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 		case reflect.Slice:
 			valueSlice, ok1 := value.([]interface{})
 			if !ok1 || reflect.TypeOf(rmValue).Kind() != reflect.Slice {
-				return ComparisonResult{IsEqual: false, Reason: &Reason{Reason: "values are not both slices or type assertion failed"}}, fmt.Errorf("values are not both slices or type assertion failed at %s", pathStr)
-			}
-			rmSlice, ok2 := rmValue.([]interface{})
-			if !ok2 {
-				return ComparisonResult{IsEqual: false, Reason: &Reason{Reason: "type assertion failed for remote slice"}}, fmt.Errorf("type assertion failed for remote slice at %s", pathStr)
-			}
-
-			if len(valueSlice) != len(rmSlice) {
-				return ComparisonResult{IsEqual: false, Reason: &Reason{Reason: "slice lengths are different"}}, nil
-			}
-
-			// If the slice is empty, they are equal.
-			if len(valueSlice) == 0 {
-				break
-			}
-
-			// Determine if we are comparing slices of maps or slices of primitives.
-			if _, ok := valueSlice[0].(map[string]interface{}); ok {
-				// Handling for slice of maps (set comparison)
-				matched := make([]bool, len(rmSlice))
-				for _, v := range valueSlice {
-					mgMap, ok := v.(map[string]interface{})
-					if !ok {
-						return ComparisonResult{IsEqual: false, Reason: &Reason{Reason: "local slice item is not a map, but expected to be"}}, nil
-					}
-
-					foundMatch := false
-					for i, r := range rmSlice {
-						if matched[i] {
-							continue
-						}
-						rmMap, ok := r.(map[string]interface{})
-						if !ok {
-							continue
-						}
-
-						// We need recursive comparison for maps
-						res, err := CompareExisting(mgMap, rmMap, currentPath...)
-						if err == nil && res.IsEqual {
-							matched[i] = true
-							foundMatch = true
-							break
-						}
-					}
-
-					if !foundMatch {
-						return ComparisonResult{IsEqual: false, Reason: &Reason{Reason: "item not found in remote slice"}}, nil
-					}
-				}
-			} else {
-				// Handling for slice of primitives
-				// We build a count map for both slices to compare their elements.
-				// This allows us to handle cases where the order of elements may differ.
-				mgCounts := make(map[interface{}]int)
-				for _, item := range valueSlice {
-					mgCounts[item]++
-				}
-
-				rmCounts := make(map[interface{}]int)
-				for _, item := range rmSlice {
-					rmCounts[item]++
-				}
-
-				if !reflect.DeepEqual(mgCounts, rmCounts) {
-					return ComparisonResult{IsEqual: false, Reason: &Reason{Reason: "primitive slices have different elements"}}, nil
-				}
-			}
-		default:
-			ok, err := compareAny(value, rmValue)
-			if err != nil {
 				return ComparisonResult{
 					IsEqual: false,
 					Reason: &Reason{
-						Reason:      "error comparing values",
+						Reason:      "values are not both slices or type assertion failed",
 						FirstValue:  value,
 						SecondValue: rmValue,
 					},
-				}, err
+				}, fmt.Errorf("values are not both slices or type assertion failed at %s", pathStr)
 			}
+			rmSlice, ok2 := rmValue.([]interface{})
+			if !ok2 {
+				return ComparisonResult{
+					IsEqual: false,
+					Reason: &Reason{
+						Reason:      "values are not both slices or type assertion failed",
+						FirstValue:  value,
+						SecondValue: rmValue,
+					},
+				}, fmt.Errorf("type assertion failed for slice at %s", pathStr)
+			}
+			// If the first slice is longer than the second, they are not equal.
+			// If the second slice is longer than the first, we ignore it because we are only comparing fields that exist in the first map.
+			if len(valueSlice) > len(rmSlice) {
+				return ComparisonResult{
+					IsEqual: false,
+					Reason: &Reason{
+						Reason:      "first slice is longer than second",
+						FirstValue:  value,
+						SecondValue: rmValue,
+					},
+				}, nil
+			}
+
+			for i, v := range valueSlice {
+				if reflect.TypeOf(v).Kind() == reflect.Map {
+					mgMap, ok1 := v.(map[string]interface{})
+					if !ok1 {
+						return ComparisonResult{
+							IsEqual: false,
+							Reason: &Reason{
+								Reason:      "type assertion failed",
+								FirstValue:  value,
+								SecondValue: rmValue,
+							},
+						}, fmt.Errorf("type assertion failed for map at %s", pathStr)
+					}
+					rmMap, ok2 := rmSlice[i].(map[string]interface{})
+					if !ok2 {
+						return ComparisonResult{
+							IsEqual: false,
+							Reason: &Reason{
+								Reason:      "type assertion failed",
+								FirstValue:  value,
+								SecondValue: rmValue,
+							},
+						}, fmt.Errorf("type assertion failed for map at %s", pathStr)
+					}
+					res, err := CompareExisting(mgMap, rmMap, currentPath...)
+					if err != nil {
+						return ComparisonResult{
+							IsEqual: false,
+							Reason: &Reason{
+								Reason:      "error comparing maps",
+								FirstValue:  value,
+								SecondValue: rmValue,
+							},
+						}, err
+					}
+					if !res.IsEqual {
+						return ComparisonResult{
+							IsEqual: false,
+							Reason: &Reason{
+								Reason:      "values differ",
+								FirstValue:  value,
+								SecondValue: rmValue,
+							},
+						}, nil
+					}
+				} else if v != rmSlice[i] {
+					return ComparisonResult{
+						IsEqual: false,
+						Reason: &Reason{
+							Reason:      "values differ",
+							FirstValue:  value,
+							SecondValue: rmValue,
+						},
+					}, nil
+				}
+			}
+		default:
+			ok := compareAny(value, rmValue)
 			if !ok {
 				return ComparisonResult{
 					IsEqual: false,
@@ -206,76 +215,13 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 
 	return ComparisonResult{IsEqual: true}, nil
 }
-func isNumeric(kind reflect.Kind) bool {
-	switch kind {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64:
-		return true
-	default:
-		return false
-	}
-}
 
-func numberCaster(value interface{}) int64 {
-	switch v := value.(type) {
-	case int:
-		return int64(v)
-	case int8:
-		return int64(v)
-	case int16:
-		return int64(v)
-	case int32:
-		return int64(v)
-	case int64:
-		return v // No conversion needed since v is already int64
-	case uint:
-		return int64(v)
-	case uint8:
-		return int64(v)
-	case uint16:
-		return int64(v)
-	case uint32:
-		return int64(v)
-	case uint64:
-		return int64(v)
-	case float32:
-		return int64(v)
-	case float64:
-		return int64(v)
-	default:
-		return -999999 // Return a default value if none of the cases match
-	}
-}
+func compareAny(a any, b any) bool {
+	strA := fmt.Sprintf("%v", a)
+	strB := fmt.Sprintf("%v", b)
 
-func compareAny(a any, b any) (bool, error) {
-	//if is number compare as number
-	switch a.(type) {
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
-		ia := numberCaster(a)
-		ib := numberCaster(b)
-		return ia == ib, nil
-	case string:
-		sa, ok := a.(string)
-		if !ok {
-			return false, fmt.Errorf("type assertion failed - to string: %v", a)
-		}
-		sb, ok := b.(string)
-		if !ok {
-			return false, fmt.Errorf("type assertion failed - to string: %v", b)
-		}
-		return sa == sb, nil
-	case bool:
-		ba, ok := a.(bool)
-		if !ok {
-			return false, fmt.Errorf("type assertion failed - to bool: %v", a)
-		}
-		bb, ok := b.(bool)
-		if !ok {
-			return false, fmt.Errorf("type assertion failed - to bool: %v", b)
-		}
-		return ba == bb, nil
-	default:
-		return reflect.DeepEqual(a, b), nil
-	}
+	a = jqutil.InferType(strA)
+	b = jqutil.InferType(strB)
+
+	return cmp.Equal(a, b)
 }
