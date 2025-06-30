@@ -30,8 +30,8 @@ func (r ComparisonResult) String() string {
 }
 
 // CompareExisting recursively compares fields between two maps and logs differences.
-// If a field exists in the first map but not in the second, it is considered unequal.
-// If a field exist in the second map but not in the first, it is ignored.
+// If a field exists in the first map but not in the second, it is ignored.
+// If a field exists in the second map but not in the first, it is ignored.
 // If both maps have the same field, it compares their values.
 // Slices order is considered, so if the order of elements in slices is different, they are considered unequal.
 // If the values are maps or slices, it recursively compares them.
