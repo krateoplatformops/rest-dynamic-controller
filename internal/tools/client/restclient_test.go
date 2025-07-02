@@ -420,7 +420,7 @@ func TestFindBy(t *testing.T) {
 		expected         interface{}
 		expectedError    string
 		identifierFields []string
-		specFields       map[string]interface{}
+		mg               map[string]interface{}
 	}{
 		{
 			name: "successful find by identifier",
@@ -439,7 +439,27 @@ func TestFindBy(t *testing.T) {
 				Method: "GET",
 			},
 			identifierFields: []string{"id"},
-			specFields:       map[string]interface{}{"spec": map[string]interface{}{"id": "target"}},
+			mg:               map[string]interface{}{"spec": map[string]interface{}{"id": "target"}},
+			expected:         map[string]interface{}{"id": "target", "name": "target_item"},
+		},
+		{
+			name: "successful find by identifier on status",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode([]interface{}{
+					map[string]interface{}{"id": "1", "name": "item1"},
+					map[string]interface{}{"id": "2", "name": "item2"},
+					map[string]interface{}{"id": "target", "name": "target_item"},
+				},
+				)
+			},
+			path: "/api/test",
+			opts: &RequestConfiguration{
+				Method: "GET",
+			},
+			identifierFields: []string{"id"},
+			mg:               map[string]interface{}{"spec": map[string]interface{}{"name": "test"}, "status": map[string]interface{}{"id": "target"}},
 			expected:         map[string]interface{}{"id": "target", "name": "target_item"},
 		},
 		{
@@ -465,7 +485,7 @@ func TestFindBy(t *testing.T) {
 				Method: "GET",
 			},
 			identifierFields: []string{"metadata.name"},
-			specFields: map[string]interface{}{
+			mg: map[string]interface{}{
 				"spec": map[string]interface{}{
 					"metadata": map[string]interface{}{
 						"name": "target"}}},
@@ -491,7 +511,7 @@ func TestFindBy(t *testing.T) {
 				Method: "GET",
 			},
 			identifierFields: []string{"id"},
-			specFields:       map[string]interface{}{"spec": map[string]interface{}{"id": "nonexistent"}},
+			mg:               map[string]interface{}{"spec": map[string]interface{}{"id": "nonexistent"}},
 			expectedError:    "item not found",
 		},
 		{
@@ -506,7 +526,7 @@ func TestFindBy(t *testing.T) {
 				Method: "GET",
 			},
 			identifierFields: []string{"id"},
-			specFields:       map[string]interface{}{"spec": map[string]interface{}{"id": "target"}},
+			mg:               map[string]interface{}{"spec": map[string]interface{}{"id": "target"}},
 			expectedError:    "item not found",
 		},
 		{
@@ -519,7 +539,7 @@ func TestFindBy(t *testing.T) {
 				Method: "GET",
 			},
 			identifierFields: []string{"id"},
-			specFields:       map[string]interface{}{"id": "target"},
+			mg:               map[string]interface{}{"id": "target"},
 			expectedError:    "unexpected status: 500",
 		},
 		{
@@ -539,7 +559,7 @@ func TestFindBy(t *testing.T) {
 				Method: "GET",
 			},
 			identifierFields: []string{"id"},
-			specFields:       map[string]interface{}{"spec": map[string]interface{}{"id": "456"}}, // Will be converted to string for comparison
+			mg:               map[string]interface{}{"spec": map[string]interface{}{"id": "456"}}, // Will be converted to string for comparison
 			expected:         map[string]interface{}{"id": 456, "name": "item2"},
 		},
 	}
@@ -554,8 +574,8 @@ func TestFindBy(t *testing.T) {
 			client.IdentifierFields = tt.identifierFields
 
 			u := unstructured.Unstructured{}
-			u.SetUnstructuredContent(tt.specFields)
-			client.SpecFields = &u
+			u.SetUnstructuredContent(tt.mg)
+			client.Resource = &u
 
 			if tt.clientSetup != nil {
 				tt.clientSetup(client)
