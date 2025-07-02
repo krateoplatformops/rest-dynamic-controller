@@ -555,7 +555,7 @@ func TestFindBy(t *testing.T) {
 
 			u := unstructured.Unstructured{}
 			u.SetUnstructuredContent(tt.specFields)
-			client.SpecFields = &u
+			client.Resource = &u
 
 			if tt.clientSetup != nil {
 				tt.clientSetup(client)

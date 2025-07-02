@@ -97,7 +97,7 @@ type UnstructuredClientInterface interface {
 
 type UnstructuredClient struct {
 	IdentifierFields []string
-	SpecFields       *unstructured.Unstructured
+	Resource         *unstructured.Unstructured
 	DocScheme        *libopenapi.DocumentModel[v3.Document]
 	Server           string
 	Debug            bool
@@ -111,14 +111,37 @@ type RequestConfiguration struct {
 	Method     string
 }
 
-func (u *UnstructuredClient) isInSpecFields(field, value string) (bool, error) {
+func (u *UnstructuredClient) isInResource(field, value string) (bool, error) {
+	if u.Resource == nil {
+		return false, fmt.Errorf("resource is nil")
+	}
 	fields := strings.Split(field, ".")
-	specs, err := unstructuredtools.GetFieldsFromUnstructured(u.SpecFields, "spec")
+	specs, err := unstructuredtools.GetFieldsFromUnstructured(u.Resource, "spec")
 	if err != nil {
 		return false, fmt.Errorf("getting fields from unstructured: %w", err)
 	}
 
 	val, ok, err := unstructured.NestedFieldCopy(specs, fields...)
+	if err != nil {
+		return false, fmt.Errorf("getting nested field: %w", err)
+	}
+	if !ok {
+		return false, nil
+	}
+	if reflect.DeepEqual(val, value) {
+		return true, nil
+	}
+
+	if u.Resource.Object["status"] == nil {
+		return false, nil
+	}
+
+	status, err := unstructuredtools.GetFieldsFromUnstructured(u.Resource, "status")
+	if err != nil {
+		return false, fmt.Errorf("getting fields from unstructured: %w", err)
+	}
+
+	val, ok, err = unstructured.NestedFieldCopy(status, fields...)
 	if err != nil {
 		return false, fmt.Errorf("getting nested field: %w", err)
 	}
