@@ -125,12 +125,13 @@ func (u *UnstructuredClient) isInResource(field, value string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("getting nested field: %w", err)
 	}
-	if !ok {
-		return false, nil
+	if ok {
+		if reflect.DeepEqual(val, value) {
+			return true, nil
+		}
 	}
-	if reflect.DeepEqual(val, value) {
-		return true, nil
-	}
+
+	// if value is not found in spec, we check the status (if it exists)
 
 	if u.Resource.Object["status"] == nil {
 		return false, nil
@@ -147,11 +148,13 @@ func (u *UnstructuredClient) isInResource(field, value string) (bool, error) {
 	}
 	if !ok {
 		return false, nil
-	}
-	if reflect.DeepEqual(val, value) {
-		return true, nil
+	} else {
+		if reflect.DeepEqual(val, value) {
+			return true, nil
+		}
 	}
 
+	// end of the search, if we reach this point, the value is not found
 	return false, nil
 }
 
