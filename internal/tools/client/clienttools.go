@@ -111,11 +111,10 @@ type RequestConfiguration struct {
 	Method     string
 }
 
-func (u *UnstructuredClient) isInResource(field, value string) (bool, error) {
+func (u *UnstructuredClient) isInResource(value string, fields ...string) (bool, error) {
 	if u.Resource == nil {
 		return false, fmt.Errorf("resource is nil")
 	}
-	fields := strings.Split(field, ".")
 	specs, err := unstructuredtools.GetFieldsFromUnstructured(u.Resource, "spec")
 	if err != nil {
 		return false, fmt.Errorf("getting fields from unstructured: %w", err)
@@ -125,14 +124,11 @@ func (u *UnstructuredClient) isInResource(field, value string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("getting nested field: %w", err)
 	}
-	if ok {
-		if reflect.DeepEqual(val, value) {
-			return true, nil
-		}
+	if ok && reflect.DeepEqual(val, value) {
+		return true, nil
 	}
 
 	// if value is not found in spec, we check the status (if it exists)
-
 	if u.Resource.Object["status"] == nil {
 		return false, nil
 	}
@@ -148,10 +144,10 @@ func (u *UnstructuredClient) isInResource(field, value string) (bool, error) {
 	}
 	if !ok {
 		return false, nil
-	} else {
-		if reflect.DeepEqual(val, value) {
-			return true, nil
-		}
+	}
+
+	if reflect.DeepEqual(val, value) {
+		return true, nil
 	}
 
 	// end of the search, if we reach this point, the value is not found
@@ -186,6 +182,10 @@ func (u *UnstructuredClient) ValidateRequest(httpMethod string, path string, par
 
 // RequestedBody is a method that returns the body parameters for a given HTTP method and path.
 func (u *UnstructuredClient) RequestedBody(httpMethod string, path string) (bodyParams stringset.StringSet, err error) {
+	if u.DocScheme == nil || u.DocScheme.Model.Paths == nil {
+		return nil, fmt.Errorf("document scheme or model is nil")
+	}
+
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {
 		return nil, fmt.Errorf("path not found: %s", path)
