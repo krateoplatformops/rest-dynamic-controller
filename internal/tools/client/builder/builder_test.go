@@ -9,6 +9,7 @@ import (
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client/apiaction"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type mockUnstructuredClient struct {
@@ -127,17 +128,30 @@ func TestBuildCallConfig(t *testing.T) {
 		IdentifierFields: []string{"id"},
 	}
 
-	statusFields := map[string]interface{}{
-		"id":     "123",
-		"status": "active",
+	// statusFields := map[string]interface{}{
+	// 	"id":     "123",
+	// 	"status": "active",
+	// }
+
+	// specFields := map[string]interface{}{
+	// 	"filter": "test",
+	// 	"name":   "testname",
+	// }
+
+	mg := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"status": map[string]interface{}{
+				"id":     "123",
+				"status": "active",
+			},
+			"spec": map[string]interface{}{
+				"filter": "test",
+				"name":   "testname",
+			},
+		},
 	}
 
-	specFields := map[string]interface{}{
-		"filter": "test",
-		"name":   "testname",
-	}
-
-	config := BuildCallConfig(callInfo, statusFields, specFields)
+	config := BuildCallConfig(callInfo, mg)
 
 	if config == nil {
 		t.Fatal("expected config but got nil")
@@ -193,13 +207,16 @@ func TestIsResourceKnown(t *testing.T) {
 		},
 	}
 
-	statusFields := map[string]interface{}{
-		"id": "123",
+	mg := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"status": map[string]interface{}{
+				"id": "123",
+			},
+			"spec": map[string]interface{}{},
+		},
 	}
 
-	specFields := map[string]interface{}{}
-
-	result := IsResourceKnown(mockClient, info, statusFields, specFields)
+	result := IsResourceKnown(mockClient, info, mg)
 
 	if !result {
 		t.Error("expected resource to be known")

@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"strings"
 
+	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
+
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/text"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client/apiaction"
@@ -72,7 +75,25 @@ func APICallBuilder(cli restclient.UnstructuredClientInterface, info *getter.Inf
 }
 
 // BuildCallConfig builds the request configuration based on the callInfo and the fields from the status and spec
-func BuildCallConfig(callInfo *CallInfo, statusFields map[string]interface{}, specFields map[string]interface{}) *restclient.RequestConfiguration {
+func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured) *restclient.RequestConfiguration {
+	if callInfo == nil || mg == nil {
+		return nil
+	}
+	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
+	if err != nil {
+		// If the status is not found, it means that the resource is not created yet
+		// The error is not returned here, as it is not critical for the validation
+		// log.Debug("Status not found")
+		statusFields = make(map[string]interface{})
+	}
+	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
+	if err != nil {
+		// If the spec is not found, it means that the resource is not created yet
+		// The error is not returned here, as it is not critical for the validation
+		// log.Debug("Spec not found")
+		specFields = make(map[string]interface{})
+	}
+
 	reqConfiguration := &restclient.RequestConfiguration{}
 	reqConfiguration.Parameters = make(map[string]string)
 	reqConfiguration.Query = make(map[string]string)
@@ -86,7 +107,11 @@ func BuildCallConfig(callInfo *CallInfo, statusFields map[string]interface{}, sp
 }
 
 // tries to build the GET API Call, with the given statusFields and specFields values, if it is able to validate the GET request, returns true
-func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *getter.Info, statusFields map[string]interface{}, specFields map[string]interface{}) bool {
+func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *getter.Info, mg *unstructured.Unstructured) bool {
+	if mg == nil || clientInfo == nil {
+		return false
+	}
+
 	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Get)
 	if apiCall == nil {
 		return false
@@ -94,7 +119,7 @@ func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *get
 	if err != nil {
 		return false
 	}
-	reqConfiguration := BuildCallConfig(callInfo, statusFields, specFields)
+	reqConfiguration := BuildCallConfig(callInfo, mg)
 	if reqConfiguration == nil {
 		return false
 	}
