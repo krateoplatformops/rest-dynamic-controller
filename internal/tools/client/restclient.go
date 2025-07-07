@@ -197,7 +197,7 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 							}
 							responseValue = fmt.Sprintf("%v", val)
 						}
-						ok, err = u.isInSpecFields(ide, responseValue)
+						ok, err = u.isInResource(responseValue, idepath...)
 						if err != nil {
 							return Response{}, err
 						}

@@ -101,20 +101,11 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	cli.Debug = meta.IsVerbose(mg)
 	cli.SetAuth = clientInfo.SetAuth
 	cli.IdentifierFields = clientInfo.Resource.Identifiers
-	cli.SpecFields = mg
-	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
-	if err != nil {
-		log.Debug("Getting spec", "error", err)
-		return controller.ExternalObservation{}, err
-	}
-	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
-	if err != nil {
-		log.Debug("Error getting status.", "error", err)
-	}
+	cli.Resource = mg
 
 	var response restclient.Response
 	// Tries to tries to build the GET API Call, with the given statusFields and specFields values, if it is able to validate the GET request, returns true
-	isKnown := builder.IsResourceKnown(cli, clientInfo, statusFields, specFields)
+	isKnown := builder.IsResourceKnown(cli, clientInfo, mg)
 	if isKnown {
 		// Getting the external resource by its identifier
 		apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Get)
@@ -126,7 +117,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Building API call", "error", err)
 			return controller.ExternalObservation{}, err
 		}
-		reqConfiguration := builder.BuildCallConfig(callInfo, statusFields, specFields)
+		reqConfiguration := builder.BuildCallConfig(callInfo, mg)
 		if reqConfiguration == nil {
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
@@ -182,7 +173,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Building API call", "error", err)
 			return controller.ExternalObservation{}, err
 		}
-		reqConfiguration := builder.BuildCallConfig(callInfo, statusFields, specFields)
+		reqConfiguration := builder.BuildCallConfig(callInfo, mg)
 		if reqConfiguration == nil {
 			log.Debug("Building call configuration", "error", "error building call configuration")
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
@@ -316,11 +307,6 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	cli.Debug = meta.IsVerbose(mg)
 	cli.SetAuth = clientInfo.SetAuth
 
-	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
-	if err != nil {
-		log.Debug("Getting spec", "error", err)
-		return err
-	}
 	apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Create)
 	if err != nil {
 		log.Debug("Building API call", "error", err)
@@ -330,7 +316,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Info("API action create not found", "action", apiaction.Update)
 		return nil
 	}
-	reqConfiguration := builder.BuildCallConfig(callInfo, nil, specFields)
+	reqConfiguration := builder.BuildCallConfig(callInfo, mg)
 	response, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
 		log.Debug("Performing REST call", "error", err)
@@ -406,11 +392,6 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	cli.Debug = meta.IsVerbose(mg)
 	cli.SetAuth = clientInfo.SetAuth
 
-	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
-	if err != nil {
-		log.Debug("Getting spec", "error", err)
-		return err
-	}
 	apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Update)
 	if err != nil {
 		log.Debug("Building API call", "error", err)
@@ -421,12 +402,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return nil
 	}
 
-	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
-	if err == ErrStatusNotFound {
-		log.Debug("External resource not created yet", "kind", mg.GetKind())
-		return err
-	}
-	reqConfiguration := builder.BuildCallConfig(callInfo, statusFields, specFields)
+	reqConfiguration := builder.BuildCallConfig(callInfo, mg)
 	response, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
 		log.Debug("Performing REST call", "error", err)
@@ -490,12 +466,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	cli.Debug = meta.IsVerbose(mg)
 	cli.SetAuth = clientInfo.SetAuth
 
-	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
-	if err != nil {
-		log.Debug("Getting spec", "error", err)
-		return err
-	}
-	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
+	_, err = unstructuredtools.GetFieldsFromUnstructured(mg, "status")
 	if err == ErrStatusNotFound {
 		log.Debug("External resource not created yet", "kind", mg.GetKind())
 		log.Debug("Remote resource is assumed to not exist, deleting CR")
@@ -518,7 +489,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Info("API action delete not found", "action", apiaction.Update)
 		return nil
 	}
-	reqConfiguration := builder.BuildCallConfig(callInfo, statusFields, specFields)
+	reqConfiguration := builder.BuildCallConfig(callInfo, mg)
 	if reqConfiguration == nil {
 		return fmt.Errorf("building call configuration")
 	}
