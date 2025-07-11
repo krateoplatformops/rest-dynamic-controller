@@ -35,6 +35,8 @@ type Resource struct {
 	Kind string `json:"kind"`
 	// Identifiers: the list of fields to use as identifiers
 	Identifiers []string `json:"identifiers"`
+	// AdditionalStatusFields: the list of additional status fields to use
+	AdditionalStatusFields []string `json:"additionalStatusFields"`
 	// VerbsDescription: the list of verbs to use on this resource
 	VerbsDescription []VerbsDescription `json:"verbsDescription"`
 }

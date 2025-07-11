@@ -471,8 +471,9 @@ func TestDynamicGetter_Get_ExtendedCoverage(t *testing.T) {
 							"resourceGroup": "test.io",
 							"oasPath":       "/api/v1/swagger.json",
 							"resource": map[string]interface{}{
-								"kind":        "TestResource",
-								"identifiers": []interface{}{"id"}, // Changed from []string to []interface{}
+								"kind":                   "TestResource",
+								"identifiers":            []interface{}{"id"}, // Changed from []string to []interface{}
+								"additionalStatusFields": []interface{}{"test_additional_field"},
 								"verbsDescription": []interface{}{
 									map[string]interface{}{
 										"action": "get",
@@ -500,7 +501,10 @@ func TestDynamicGetter_Get_ExtendedCoverage(t *testing.T) {
 			validateResult: func(t *testing.T, info *Info) {
 				assert.Equal(t, "/api/v1/swagger.json", info.URL)
 				assert.Equal(t, "TestResource", info.Resource.Kind)
+				assert.Len(t, info.Resource.Identifiers, 1)
 				assert.Equal(t, []string{"id"}, info.Resource.Identifiers)
+				assert.Len(t, info.Resource.AdditionalStatusFields, 1)
+				assert.Equal(t, []string{"test_additional_field"}, info.Resource.AdditionalStatusFields)
 				assert.Len(t, info.Resource.VerbsDescription, 1)
 				assert.Equal(t, "get", info.Resource.VerbsDescription[0].Action)
 			},

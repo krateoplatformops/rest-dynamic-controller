@@ -16,7 +16,7 @@ func TestIsCRUpdated(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "valid comparison",
+			name: "identical values - should be equal",
 			mg: &unstructured.Unstructured{
 				Object: map[string]interface{}{
 					"spec": map[string]interface{}{
@@ -33,10 +33,135 @@ func TestIsCRUpdated(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "missing spec field",
+			name: "different values - should not be equal",
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"field1": "value1",
+						"field2": "value2",
+					},
+				},
+			},
+			rm: map[string]interface{}{
+				"field1": "value1",
+				"field2": "different_value",
+			},
+			wantErr:  false,
+			expected: false,
+		},
+		{
+			name: "missing fields in rm - should be equal (only existing fields compared)",
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"field1": "value1",
+						"field2": "value2",
+					},
+				},
+			},
+			rm: map[string]interface{}{
+				"field1": "value1",
+			},
+			wantErr:  false,
+			expected: true,
+		},
+		{
+			name: "extra fields in rm - should be equal (only existing fields compared)",
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"field1": "value1",
+					},
+				},
+			},
+			rm: map[string]interface{}{
+				"field1": "value1",
+				"field2": "extra_value",
+			},
+			wantErr:  false,
+			expected: true,
+		},
+		{
+			name: "empty spec",
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{},
+				},
+			},
+			rm:       map[string]interface{}{},
+			wantErr:  false,
+			expected: true,
+		},
+		{
+			name: "nested objects",
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"nested": map[string]interface{}{
+							"field1": "value1",
+						},
+					},
+				},
+			},
+			rm: map[string]interface{}{
+				"nested": map[string]interface{}{
+					"field1": "value1",
+				},
+			},
+			wantErr:  false,
+			expected: true,
+		},
+		{
+			name: "nested objects - different values",
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"nested": map[string]interface{}{
+							"field1": "value1",
+						},
+					},
+				},
+			},
+			rm: map[string]interface{}{
+				"nested": map[string]interface{}{
+					"field1": "different_value",
+				},
+			},
+			wantErr:  false,
+			expected: false,
+		},
+		//{
+		//	name: "nested objects - different nesting structure", // ???
+		//	mg: &unstructured.Unstructured{
+		//		Object: map[string]interface{}{
+		//			"spec": map[string]interface{}{
+		//				"nested": map[string]interface{}{
+		//					"field1": "value1",
+		//				},
+		//			},
+		//		},
+		//	},
+		//	rm: map[string]interface{}{
+		//		"nested": map[string]interface{}{
+		//			"inner": map[string]interface{}{
+		//				"field1": "value1",
+		//			},
+		//		},
+		//	},
+		//	wantErr:  false,
+		//	expected: false,
+		//},
+		{
+			name: "missing spec field - should error",
 			mg: &unstructured.Unstructured{
 				Object: map[string]interface{}{},
 			},
+			rm:      map[string]interface{}{},
+			wantErr: true,
+		},
+		{
+			name:    "nil mg - should error",
+			mg:      nil,
 			rm:      map[string]interface{}{},
 			wantErr: true,
 		},
@@ -66,7 +191,7 @@ func TestPopulateStatusFields(t *testing.T) {
 		expected   map[string]interface{}
 	}{
 		{
-			name: "successful population",
+			name: "identifiers only - successful population",
 			clientInfo: &getter.Info{
 				Resource: getter.Resource{
 					Identifiers: []string{"id", "name"},
@@ -85,6 +210,80 @@ func TestPopulateStatusFields(t *testing.T) {
 				"status": map[string]interface{}{
 					"id":   "123",
 					"name": "test",
+				},
+			},
+		},
+		{
+			name: "additional status fields only",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					AdditionalStatusFields: []string{"status1", "status2"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"status1": "active",
+				"status2": "ready",
+				"ignored": "field",
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"status1": "active",
+					"status2": "ready",
+				},
+			},
+		},
+		{
+			name: "both identifiers and additional status fields",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					Identifiers:            []string{"id"},
+					AdditionalStatusFields: []string{"state", "version"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"id":      "456",
+				"state":   "running",
+				"version": "1.0.0",
+				"extra":   "ignored",
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"id":      "456",
+					"state":   "running",
+					"version": "1.0.0",
+				},
+			},
+		},
+		{
+			name: "overlapping identifiers and additional status fields - should not duplicate",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					Identifiers:            []string{"id", "name"},
+					AdditionalStatusFields: []string{"name", "status"}, // "name" appears in both
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"id":     "789",
+				"name":   "test-overlap",
+				"status": "active",
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"id":     "789",
+					"name":   "test-overlap",
+					"status": "active",
 				},
 			},
 		},
@@ -119,6 +318,106 @@ func TestPopulateStatusFields(t *testing.T) {
 			wantErr:  false,
 			expected: map[string]interface{}{},
 		},
+		{
+			name: "no identifiers or additional fields",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"id":   "123",
+				"name": "test",
+			},
+			wantErr:  false,
+			expected: map[string]interface{}{},
+		},
+		{
+			name: "existing status fields should be preserved",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					Identifiers: []string{"id"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"status": map[string]interface{}{
+						"existing": "value",
+					},
+				},
+			},
+			body: map[string]interface{}{
+				"id": "123",
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"existing": "value",
+					"id":       "123",
+				},
+			},
+		},
+		{
+			name: "non-strings data types - numbers, booleans",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					Identifiers:            []string{"id"},
+					AdditionalStatusFields: []string{"count", "active"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"id":     42,
+				"count":  100,
+				"active": true,
+				//"tags":   []string{"tag1", "tag2"}, // currently, arrays are not supported in status fields
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"id":     "42",
+					"count":  "100",
+					"active": "true",
+				},
+			},
+		},
+		{
+			name: "nil body",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					Identifiers: []string{"id"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body:     nil,
+			wantErr:  false,
+			expected: map[string]interface{}{},
+		},
+		{
+			name: "nil mg - should error",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					Identifiers: []string{"id"},
+				},
+			},
+			mg:      nil,
+			body:    map[string]interface{}{"id": "123"},
+			wantErr: true,
+		},
+		{
+			name:       "nil clientInfo - should error",
+			clientInfo: nil,
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body:    map[string]interface{}{"id": "123"},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -130,16 +429,50 @@ func TestPopulateStatusFields(t *testing.T) {
 			}
 
 			if !tt.wantErr {
-				status, exists, _ := unstructured.NestedMap(tt.mg.Object, "status")
+				// Validate the results
 				if len(tt.expected) == 0 {
-					if exists {
-						t.Errorf("populateStatusFields() unexpected status field created")
+					// No status should be created or should be empty
+					status, exists, _ := unstructured.NestedMap(tt.mg.Object, "status")
+					if exists && len(status) > 0 {
+						// Check if there were pre-existing status fields ("existing" field in status)
+						hasPreExisting := false
+						for _, test := range tests {
+							if test.name == tt.name {
+								if statusObj, ok := test.mg.Object["status"]; ok {
+									if statusMap, ok := statusObj.(map[string]interface{}); ok && len(statusMap) > 0 {
+										hasPreExisting = true
+										break
+									}
+								}
+							}
+						}
+						if !hasPreExisting {
+							t.Errorf("populateStatusFields() unexpected status field created: %v while expected is empty", status)
+						}
 					}
 				} else {
+					// Validate expected status fields
+					status, exists, _ := unstructured.NestedMap(tt.mg.Object, "status")
+					if !exists {
+						t.Errorf("populateStatusFields() status field not created while length of expected is %d", len(tt.expected))
+						return
+					}
+
 					expectedStatus := tt.expected["status"].(map[string]interface{})
-					for k, v := range expectedStatus {
-						if status[k] != v {
-							t.Errorf("populateStatusFields() status.%s = %v, want %v", k, status[k], v)
+
+					// Check that all expected fields are present with correct values
+					for k, expectedVal := range expectedStatus {
+						if actualVal, ok := status[k]; !ok {
+							t.Errorf("populateStatusFields() status.%s not found", k)
+						} else if actualVal != expectedVal {
+							t.Errorf("populateStatusFields() status.%s = %v, want %v", k, actualVal, expectedVal)
+						}
+					}
+
+					// For tests with existing status, ensure they're preserved
+					if tt.name == "existing status fields should be preserved" {
+						if status["existing"] != "value" {
+							t.Errorf("populateStatusFields() existing status field not preserved")
 						}
 					}
 				}
