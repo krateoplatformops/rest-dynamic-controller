@@ -84,7 +84,6 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 
 // convertValueForUnstructured converts values to types that can be safely handled by unstructured.SetNestedField
 // otherwise the value wouldn't be deep copied correctly into the unstructured object and a panic would occur
-// int64 is the standard integer type that Kubernetes unstructured objects
 func convertValueForUnstructured(value interface{}) interface{} {
 	if value == nil {
 		return nil
@@ -117,18 +116,23 @@ func convertValueForUnstructured(value interface{}) interface{} {
 		// If too large for int64, convert to string (fallback)
 		return fmt.Sprintf("%d", v)
 	case float32:
-		f64 := float64(v)
-		// Handle special float values that might cause issues (fallback)
-		if math.IsInf(f64, 0) || math.IsNaN(f64) {
-			return fmt.Sprintf("%f", f64)
+		// Convert float32 to int64
+		// Needed due to the fact that CRDs discourage the use of float
+		// Check if it fits in int64 to avoid overflow
+		if v >= math.MinInt64 && v <= math.MaxInt64 {
+			return int64(v)
 		}
-		return f64
+		// If out of int64 range, convert to string as fallback
+		return fmt.Sprintf("%.0f", v)
 	case float64:
-		// Handle special float values that might cause issues (fallback)
-		if math.IsInf(v, 0) || math.IsNaN(v) {
-			return fmt.Sprintf("%f", v)
+		// Convert float64 to int64
+		// Needed due to the fact that CRDs discourage the use of float
+		// Check if it fits in int64 to avoid overflow
+		if v >= math.MinInt64 && v <= math.MaxInt64 {
+			return int64(v)
 		}
-		return v
+		// If out of int64 range, convert to string as fallback
+		return fmt.Sprintf("%.0f", v)
 	case bool:
 		return v
 	case string:

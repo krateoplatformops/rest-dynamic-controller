@@ -623,7 +623,7 @@ func TestConvertValueForUnstructured(t *testing.T) {
 		{
 			name:     "float32",
 			input:    float32(3.14),
-			expected: float64(3.140000104904175),
+			expected: int64(3),
 		},
 		{
 			name:     "float32 - positive infinity",
@@ -643,7 +643,7 @@ func TestConvertValueForUnstructured(t *testing.T) {
 		{
 			name:     "float64",
 			input:    3.1415926535,
-			expected: 3.1415926535,
+			expected: int64(3), // CRDs discourage the use of float, so we convert to int64
 		},
 		{
 			name:     "float64 - positive infinity",
@@ -683,7 +683,7 @@ func TestConvertValueForUnstructured(t *testing.T) {
 		{
 			name:     "slice of mixed types",
 			input:    []interface{}{"a", 1, true, 3.14},
-			expected: []interface{}{"a", int64(1), true, 3.14},
+			expected: []interface{}{"a", int64(1), true, int64(3)},
 		},
 		{
 			name: "nested slice",
