@@ -1,8 +1,6 @@
 package restResources
 
 import (
-	"math"
-	"reflect"
 	"testing"
 
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
@@ -507,6 +505,30 @@ func TestPopulateStatusFields(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "identifiers with mixed types (string, integer, boolean)",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					Identifiers: []string{"id", "count", "active"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"id":     "123",
+				"count":  42,
+				"active": true,
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"id":     "123",
+					"count":  int64(42),
+					"active": true,
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -565,195 +587,6 @@ func TestPopulateStatusFields(t *testing.T) {
 						}
 					}
 				}
-			}
-		})
-	}
-}
-
-func TestConvertValueForUnstructured(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    interface{}
-		expected interface{}
-	}{
-		{
-			name:     "nil input",
-			input:    nil,
-			expected: nil,
-		},
-		{
-			name:     "string",
-			input:    "hello",
-			expected: "hello",
-		},
-		{
-			name:     "integer",
-			input:    123,
-			expected: int64(123),
-		},
-		{
-			name:     "int8",
-			input:    int8(10),
-			expected: int64(10),
-		},
-		{
-			name:     "int16",
-			input:    int16(1000),
-			expected: int64(1000),
-		},
-		{
-			name:     "int32",
-			input:    int32(100000),
-			expected: int64(100000),
-		},
-		{
-			name:     "int64",
-			input:    int64(10000000000),
-			expected: int64(10000000000),
-		},
-		{
-			name:     "uint",
-			input:    uint(50),
-			expected: int64(50),
-		},
-		{
-			name:     "uint8",
-			input:    uint8(200),
-			expected: int64(200),
-		},
-		{
-			name:     "uint16",
-			input:    uint16(50000),
-			expected: int64(50000),
-		},
-		{
-			name:     "uint32",
-			input:    uint32(4000000000),
-			expected: int64(4000000000),
-		},
-		{
-			name:     "uint64 - fits in int64",
-			input:    uint64(math.MaxInt64),
-			expected: int64(math.MaxInt64),
-		},
-		{
-			name:     "uint64 - overflows int64",
-			input:    uint64(math.MaxInt64 + 1),
-			expected: "9223372036854775808", // fmt.Sprintf("%d", uint64(math.MaxInt64 + 1))
-		},
-		{
-			name:     "float32",
-			input:    float32(3.14),
-			expected: int64(3),
-		},
-		{
-			name:     "float32 - positive infinity",
-			input:    float32(math.Inf(1)),
-			expected: "+Inf",
-		},
-		{
-			name:     "float32 - negative infinity",
-			input:    float32(math.Inf(-1)),
-			expected: "-Inf",
-		},
-		{
-			name:     "float32 - NaN",
-			input:    float32(math.NaN()),
-			expected: "NaN",
-		},
-		{
-			name:     "float64",
-			input:    3.1415926535,
-			expected: int64(3), // CRDs discourage the use of float, so we convert to int64
-		},
-		{
-			name:     "float64 - positive infinity",
-			input:    math.Inf(1),
-			expected: "+Inf",
-		},
-		{
-			name:     "float64 - negative infinity",
-			input:    math.Inf(-1),
-			expected: "-Inf",
-		},
-		{
-			name:     "float64 - NaN",
-			input:    math.NaN(),
-			expected: "NaN",
-		},
-		{
-			name:     "boolean",
-			input:    true,
-			expected: true,
-		},
-		{
-			name:     "empty slice",
-			input:    []interface{}{},
-			expected: []interface{}{},
-		},
-		{
-			name:     "slice of strings",
-			input:    []interface{}{"a", "b", "c"},
-			expected: []interface{}{"a", "b", "c"},
-		},
-		{
-			name:     "slice of integers",
-			input:    []interface{}{1, 2, 3},
-			expected: []interface{}{int64(1), int64(2), int64(3)},
-		},
-		{
-			name:     "slice of mixed types",
-			input:    []interface{}{"a", 1, true, 3.14},
-			expected: []interface{}{"a", int64(1), true, int64(3)},
-		},
-		{
-			name: "nested slice",
-			input: []interface{}{
-				"outer",
-				[]interface{}{"inner1", 10},
-				[]interface{}{"inner2", true},
-			},
-			expected: []interface{}{
-				"outer",
-				[]interface{}{"inner1", int64(10)},
-				[]interface{}{"inner2", true},
-			},
-		},
-		{
-			name: "slice containing map",
-			input: []interface{}{
-				"item1",
-				map[string]interface{}{
-					"key1": "value1",
-					"key2": 123,
-				},
-			},
-			expected: []interface{}{
-				"item1",
-				map[string]interface{}{
-					"key1": "value1",
-					"key2": int64(123),
-				},
-			},
-		},
-		{
-			name: "map containing slice",
-			input: map[string]interface{}{
-				"list": []interface{}{"a", 1, true},
-				"name": "test",
-			},
-			expected: map[string]interface{}{
-				"list": []interface{}{"a", int64(1), true},
-				"name": "test",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			actual := convertValueForUnstructured(tt.input)
-			if !reflect.DeepEqual(actual, tt.expected) {
-				t.Errorf("convertValueForUnstructured(%v) = %v, want %v", tt.input, actual, tt.expected)
 			}
 		})
 	}

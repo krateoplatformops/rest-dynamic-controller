@@ -71,7 +71,7 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 	for k, v := range body {
 		if _, exists := fieldsToPopulate[k]; exists {
 			// Convert the value to a format that unstructured can handle
-			convertedValue := convertValueForUnstructured(v)
+			convertedValue := deepCopyJSONValue(v)
 
 			if err := unstructured.SetNestedField(mg.Object, convertedValue, "status", k); err != nil {
 				return fmt.Errorf("setting nested field '%s' in status: %w", k, err)
@@ -82,77 +82,55 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 	return nil
 }
 
-// convertValueForUnstructured converts values to types that can be safely handled by unstructured.SetNestedField
-// otherwise the value wouldn't be deep copied correctly into the unstructured object and a panic would occur
-func convertValueForUnstructured(value interface{}) interface{} {
-	if value == nil {
-		return nil
-	}
-
-	switch v := value.(type) {
+// Note: forked from plumbing/maps/deepcopy.go
+// modified the float handling
+func deepCopyJSONValue(x any) any {
+	switch x := x.(type) {
+	case map[string]any:
+		if x == nil {
+			// Typed nil - an any that contains a type map[string]any with a value of nil
+			return x
+		}
+		clone := make(map[string]any, len(x))
+		for k, v := range x {
+			clone[k] = deepCopyJSONValue(v)
+		}
+		return clone
+	case []any:
+		if x == nil {
+			// Typed nil - an any that contains a type []any with a value of nil
+			return x
+		}
+		clone := make([]any, len(x))
+		for i, v := range x {
+			clone[i] = deepCopyJSONValue(v)
+		}
+		return clone
+	case []map[string]any:
+		if x == nil {
+			return x
+		}
+		clone := make([]any, len(x))
+		for i, v := range x {
+			clone[i] = deepCopyJSONValue(v)
+		}
+		return clone
+	case string, int64, bool, nil:
+		return x
 	case int:
-		return int64(v)
-	case int8:
-		return int64(v)
-	case int16:
-		return int64(v)
+		return int64(x)
 	case int32:
-		return int64(v)
-	case int64:
-		return v
-	case uint:
-		return int64(v)
-	case uint8:
-		return int64(v)
-	case uint16:
-		return int64(v)
-	case uint32:
-		return int64(v)
-	case uint64:
-		// Check if it fits in int64 to avoid overflow
-		if v <= math.MaxInt64 {
-			return int64(v)
-		}
-		// If too large for int64, convert to string (fallback)
-		return fmt.Sprintf("%d", v)
+		return int64(x)
 	case float32:
-		// Convert float32 to int64
-		// Needed due to the fact that CRDs discourage the use of float
-		// Check if it fits in int64 to avoid overflow
-		if v >= math.MinInt64 && v <= math.MaxInt64 {
-			return int64(v)
+		if x >= math.MinInt64 && x <= math.MaxInt64 {
+			return int64(x)
 		}
-		// If out of int64 range, convert to string as fallback
-		return fmt.Sprintf("%.0f", v)
 	case float64:
-		// Convert float64 to int64
-		// Needed due to the fact that CRDs discourage the use of float
-		// Check if it fits in int64 to avoid overflow
-		if v >= math.MinInt64 && v <= math.MaxInt64 {
-			return int64(v)
+		if x >= math.MinInt64 && x <= math.MaxInt64 {
+			return int64(x)
 		}
-		// If out of int64 range, convert to string as fallback
-		return fmt.Sprintf("%.0f", v)
-	case bool:
-		return v
-	case string:
-		return v
-	case []interface{}:
-		// Recursively convert slice elements
-		converted := make([]interface{}, len(v))
-		for i, item := range v {
-			converted[i] = convertValueForUnstructured(item)
-		}
-		return converted
-	case map[string]interface{}:
-		// Recursively convert map values
-		converted := make(map[string]interface{})
-		for key, val := range v {
-			converted[key] = convertValueForUnstructured(val)
-		}
-		return converted
 	default:
-		// For any other type, try to convert to string as a fallback
-		return fmt.Sprintf("%v", v)
+		return fmt.Sprintf("%v", x)
 	}
+	return fmt.Sprintf("%v", x) // Fallback for unsupported types
 }
