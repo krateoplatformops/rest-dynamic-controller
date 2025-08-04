@@ -345,7 +345,7 @@ func TestPopulateStatusFields(t *testing.T) {
 			mg: &unstructured.Unstructured{
 				Object: map[string]interface{}{
 					"status": map[string]interface{}{
-						"existing": "value",
+						"existing": "existingValue",
 					},
 				},
 			},
@@ -355,13 +355,13 @@ func TestPopulateStatusFields(t *testing.T) {
 			wantErr: false,
 			expected: map[string]interface{}{
 				"status": map[string]interface{}{
-					"existing": "value",
+					"existing": "existingValue",
 					"id":       "123",
 				},
 			},
 		},
 		{
-			name: "non-strings data types - numbers, booleans",
+			name: "non-strings data types - integers, booleans",
 			clientInfo: &getter.Info{
 				Resource: getter.Resource{
 					Identifiers:            []string{"id"},
@@ -375,7 +375,6 @@ func TestPopulateStatusFields(t *testing.T) {
 				"id":     42,
 				"count":  100,
 				"active": true,
-				//"tags":   []string{"tag1", "tag2"}, // currently, arrays are not supported in status fields
 			},
 			wantErr: false,
 			expected: map[string]interface{}{
@@ -486,6 +485,28 @@ func TestPopulateStatusFields(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "identifiers with mixed types (float and boolean)",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					Identifiers: []string{"count", "active"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"count":  42.5,
+				"active": true,
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"count":  int64(42),
+					"active": true,
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -539,7 +560,7 @@ func TestPopulateStatusFields(t *testing.T) {
 
 					// For tests with existing status, ensure they're preserved
 					if tt.name == "existing status fields should be preserved" {
-						if status["existing"] != "value" {
+						if status["existing"] != "existingValue" {
 							t.Errorf("populateStatusFields() existing status field not preserved")
 						}
 					}
