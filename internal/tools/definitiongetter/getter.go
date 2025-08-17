@@ -188,8 +188,9 @@ func (g *dynamicGetter) setAuth(un *unstructured.Unstructured, info *Info) error
 		return nil // No auth configured
 	}
 
+	// default namespace used to search the Configuration CR is the same as the unstructured object
 	namespace := un.GetNamespace()
-	if val, ok := configRef["namespace"]; ok {
+	if val, ok := configRef["namespace"]; ok { // if the namespace is specified in the configRef field, use it to search the Configuration CR
 		namespace = val
 	}
 

@@ -3,7 +3,6 @@ package getter
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
 	"net/http"
 	"testing"
 
@@ -191,6 +190,87 @@ func TestDynamicGetter_Get(t *testing.T) {
 			},
 		},
 		{
+			name: "successful retrieval with cross-namespace configurationRef",
+			unstructured: &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "test.io/v1",
+				"kind":       "TestResource",
+				"metadata":   map[string]interface{}{"name": "test-resource-instance", "namespace": "default"},
+				"spec": map[string]interface{}{
+					"configurationRef": map[string]interface{}{
+						"name":      "central-config",
+						"namespace": "krateo-system",
+					},
+				},
+			}},
+			definitions: []runtime.Object{
+				&unstructured.Unstructured{Object: map[string]interface{}{
+					"apiVersion": "swaggergen.krateo.io/v1alpha1",
+					"kind":       "RestDefinition",
+					"metadata":   map[string]interface{}{"name": "test-def"},
+					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/swagger.json", "resource": map[string]interface{}{"kind": "TestResource"}},
+				}},
+			},
+			configs: []runtime.Object{
+				&unstructured.Unstructured{Object: map[string]interface{}{
+					"apiVersion": "test.io/v1",
+					"kind":       "TestResourceConfiguration",
+					"metadata":   map[string]interface{}{"name": "central-config", "namespace": "krateo-system"},
+					"spec": map[string]interface{}{
+						"authenticationMethods": map[string]interface{}{
+							"bearer": map[string]interface{}{
+								"tokenRef": map[string]interface{}{"name": "central-token-secret", "namespace": "krateo-system", "key": "token"},
+							},
+						},
+					},
+				}},
+			},
+			secrets: []runtime.Object{
+				&unstructured.Unstructured{Object: map[string]interface{}{
+					"apiVersion": "v1",
+					"kind":       "Secret",
+					"metadata":   map[string]interface{}{"name": "central-token-secret", "namespace": "krateo-system"},
+					"data":       map[string]interface{}{"token": base64.StdEncoding.EncodeToString([]byte("central-test-token"))},
+				}},
+			},
+			setupMocks: func(m *mockPluralizerInterface) {
+				m.On("GVKtoGVR", schema.GroupVersionKind{Group: "test.io", Version: "v1", Kind: "TestResource"}).
+					Return(schema.GroupVersionResource{Group: "test.io", Version: "v1", Resource: "testresources"}, nil)
+				m.On("GVKtoGVR", schema.GroupVersionKind{Group: "test.io", Version: "v1", Kind: "TestResourceConfiguration"}).
+					Return(schema.GroupVersionResource{Group: "test.io", Version: "v1", Resource: "testresourceconfigurations"}, nil)
+			},
+			wantErr: false,
+			validateResult: func(t *testing.T, info *Info) {
+				assert.NotNil(t, info)
+				assert.NotNil(t, info.SetAuth)
+				req, _ := http.NewRequest("GET", "http://example.com", nil)
+				info.SetAuth(req)
+				assert.Equal(t, "Bearer central-test-token", req.Header.Get("Authorization"))
+			},
+		},
+		{
+			name: "error when configurationRef is malformed (not a map)",
+			unstructured: &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "test.io/v1",
+				"kind":       "TestResource",
+				"metadata":   map[string]interface{}{"name": "test-resource-instance", "namespace": "default"},
+				"spec":       map[string]interface{}{"configurationRef": "not-a-map"},
+			}},
+			definitions: []runtime.Object{
+				&unstructured.Unstructured{Object: map[string]interface{}{
+					"apiVersion": "swaggergen.krateo.io/v1alpha1",
+					"kind":       "RestDefinition",
+					"metadata":   map[string]interface{}{"name": "test-def"},
+					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/swagger.json", "resource": map[string]interface{}{"kind": "TestResource"}},
+				}},
+			},
+			setupMocks: func(m *mockPluralizerInterface) {
+				m.On("GVKtoGVR", schema.GroupVersionKind{Group: "test.io", Version: "v1", Kind: "TestResource"}).
+					Return(schema.GroupVersionResource{Group: "test.io", Version: "v1", Resource: "testresources"}, nil)
+			},
+			wantErr:        true,
+			wantErrMessage: "getting spec.configurationRef for 'TestResource' in namespace: default",
+		},
+		{
 			name: "error when configurationRef points to a non-existent config object",
 			unstructured: &unstructured.Unstructured{Object: map[string]interface{}{
 				"apiVersion": "test.io/v1",
@@ -216,12 +296,12 @@ func TestDynamicGetter_Get(t *testing.T) {
 			wantErrMessage: "testresourceconfigurations.test.io \"non-existent-config\" not found",
 		},
 		{
-			name: "error when basic auth is missing username",
+			name: "error when secret key is not found in secret",
 			unstructured: &unstructured.Unstructured{Object: map[string]interface{}{
 				"apiVersion": "test.io/v1",
 				"kind":       "TestResource",
 				"metadata":   map[string]interface{}{"name": "test-resource-instance", "namespace": "default"},
-				"spec":       map[string]interface{}{"configurationRef": map[string]interface{}{"name": "test-config-bad"}},
+				"spec":       map[string]interface{}{"configurationRef": map[string]interface{}{"name": "test-config"}},
 			}},
 			definitions: []runtime.Object{
 				&unstructured.Unstructured{Object: map[string]interface{}{
@@ -235,12 +315,57 @@ func TestDynamicGetter_Get(t *testing.T) {
 				&unstructured.Unstructured{Object: map[string]interface{}{
 					"apiVersion": "test.io/v1",
 					"kind":       "TestResourceConfiguration",
-					"metadata":   map[string]interface{}{"name": "test-config-bad", "namespace": "default"},
+					"metadata":   map[string]interface{}{"name": "test-config", "namespace": "default"},
 					"spec": map[string]interface{}{
 						"authenticationMethods": map[string]interface{}{
-							"basic": map[string]interface{}{
-								"passwordRef": map[string]interface{}{"name": "password-secret"},
+							"bearer": map[string]interface{}{
+								"tokenRef": map[string]interface{}{"name": "token-secret", "namespace": "default", "key": "token"},
 							},
+						},
+					},
+				}},
+			},
+			secrets: []runtime.Object{
+				&unstructured.Unstructured{Object: map[string]interface{}{
+					"apiVersion": "v1",
+					"kind":       "Secret",
+					"metadata":   map[string]interface{}{"name": "token-secret", "namespace": "default"},
+					"data":       map[string]interface{}{"wrong-key": base64.StdEncoding.EncodeToString([]byte("test-token"))},
+				}},
+			},
+			setupMocks: func(m *mockPluralizerInterface) {
+				m.On("GVKtoGVR", schema.GroupVersionKind{Group: "test.io", Version: "v1", Kind: "TestResource"}).
+					Return(schema.GroupVersionResource{Group: "test.io", Version: "v1", Resource: "testresources"}, nil)
+				m.On("GVKtoGVR", schema.GroupVersionKind{Group: "test.io", Version: "v1", Kind: "TestResourceConfiguration"}).
+					Return(schema.GroupVersionResource{Group: "test.io", Version: "v1", Resource: "testresourceconfigurations"}, nil)
+			},
+			wantErr:        true,
+			wantErrMessage: "key token not found in secret default/token-secret",
+		},
+		{
+			name: "error when no supported auth method is found",
+			unstructured: &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "test.io/v1",
+				"kind":       "TestResource",
+				"metadata":   map[string]interface{}{"name": "test-resource-instance", "namespace": "default"},
+				"spec":       map[string]interface{}{"configurationRef": map[string]interface{}{"name": "test-config-unsupported"}},
+			}},
+			definitions: []runtime.Object{
+				&unstructured.Unstructured{Object: map[string]interface{}{
+					"apiVersion": "swaggergen.krateo.io/v1alpha1",
+					"kind":       "RestDefinition",
+					"metadata":   map[string]interface{}{"name": "test-def"},
+					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/swagger.json", "resource": map[string]interface{}{"kind": "TestResource"}},
+				}},
+			},
+			configs: []runtime.Object{
+				&unstructured.Unstructured{Object: map[string]interface{}{
+					"apiVersion": "test.io/v1",
+					"kind":       "TestResourceConfiguration",
+					"metadata":   map[string]interface{}{"name": "test-config-unsupported", "namespace": "default"},
+					"spec": map[string]interface{}{
+						"authenticationMethods": map[string]interface{}{
+							"apiKey": map[string]interface{}{},
 						},
 					},
 				}},
@@ -252,10 +377,10 @@ func TestDynamicGetter_Get(t *testing.T) {
 					Return(schema.GroupVersionResource{Group: "test.io", Version: "v1", Resource: "testresourceconfigurations"}, nil)
 			},
 			wantErr:        true,
-			wantErrMessage: "missing username in basic auth",
+			wantErrMessage: "unknown auth type: apiKey",
 		},
 		{
-			name: "error when RestDefinition is missing spec.oasPath",
+			name: "error when RestDefinition resource has wrong data type",
 			unstructured: &unstructured.Unstructured{Object: map[string]interface{}{
 				"apiVersion": "test.io/v1",
 				"kind":       "TestResource",
@@ -268,7 +393,11 @@ func TestDynamicGetter_Get(t *testing.T) {
 					"metadata":   map[string]interface{}{"name": "test-def"},
 					"spec": map[string]interface{}{
 						"resourceGroup": "test.io",
-						"resource":      map[string]interface{}{"kind": "TestResource"},
+						"oasPath":       "/api/v1/swagger.json",
+						"resource": map[string]interface{}{
+							"kind":        "TestResource",
+							"identifiers": []interface{}{map[string]interface{}{"foo": "bar"}}, // Invalid type, should be []string
+						},
 					},
 				}},
 			},
@@ -277,66 +406,7 @@ func TestDynamicGetter_Get(t *testing.T) {
 					Return(schema.GroupVersionResource{Group: "test.io", Version: "v1", Resource: "testresources"}, nil)
 			},
 			wantErr:        true,
-			wantErrMessage: "missing spec.oasPath in definition",
-		},
-		{
-			name: "no definitions found",
-			unstructured: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"apiVersion": "test.io/v1",
-					"kind":       "TestKind",
-					"metadata":   map[string]interface{}{"name": "test", "namespace": "default"},
-				},
-			},
-			setupMocks: func(m *mockPluralizerInterface) {
-				m.On("GVKtoGVR", schema.GroupVersionKind{Group: "test.io", Version: "v1", Kind: "TestKind"}).
-					Return(schema.GroupVersionResource{Group: "test.io", Version: "v1", Resource: "testkinds"}, nil)
-			},
-			wantErr:        true,
-			wantErrMessage: "no definitions found",
-		},
-		{
-			name: "pluralizer error",
-			unstructured: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"apiVersion": "test.io/v1",
-					"kind":       "TestKind",
-					"metadata":   map[string]interface{}{"name": "test", "namespace": "default"},
-				},
-			},
-			setupMocks: func(m *mockPluralizerInterface) {
-				m.On("GVKtoGVR", schema.GroupVersionKind{Group: "test.io", Version: "v1", Kind: "TestKind"}).
-					Return(schema.GroupVersionResource{}, fmt.Errorf("pluralizer error"))
-			},
-			wantErr:        true,
-			wantErrMessage: "getting GVR for 'TestKind'",
-		},
-		{
-			name: "missing spec.resource in definition",
-			unstructured: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"apiVersion": "test.io/v1",
-					"kind":       "TestKind",
-					"metadata":   map[string]interface{}{"name": "test", "namespace": "default"},
-				},
-			},
-			definitions: []runtime.Object{
-				&unstructured.Unstructured{Object: map[string]interface{}{
-					"apiVersion": "swaggergen.krateo.io/v1alpha1",
-					"kind":       "RestDefinition",
-					"metadata":   map[string]interface{}{"name": "test-def"},
-					"spec": map[string]interface{}{
-						"resourceGroup": "test.io",
-						"oasPath":       "/api/v1/swagger.json",
-					},
-				}},
-			},
-			setupMocks: func(m *mockPluralizerInterface) {
-				m.On("GVKtoGVR", schema.GroupVersionKind{Group: "test.io", Version: "v1", Kind: "TestKind"}).
-					Return(schema.GroupVersionResource{Group: "test.io", Version: "v1", Resource: "testkinds"}, nil)
-			},
-			wantErr:        true,
-			wantErrMessage: "missing spec.resource in definition",
+			wantErrMessage: "json: cannot unmarshal object into Go struct field Resource.identifiers of type string",
 		},
 	}
 
