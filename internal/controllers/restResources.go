@@ -117,7 +117,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Building API call", "error", err)
 			return controller.ExternalObservation{}, err
 		}
-		reqConfiguration := builder.BuildCallConfig(callInfo, mg)
+		reqConfiguration := builder.BuildCallConfig(callInfo, mg, clientInfo.ConfigurationSpec)
 		if reqConfiguration == nil {
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
@@ -173,7 +173,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Building API call", "error", err)
 			return controller.ExternalObservation{}, err
 		}
-		reqConfiguration := builder.BuildCallConfig(callInfo, mg)
+		reqConfiguration := builder.BuildCallConfig(callInfo, mg, clientInfo.ConfigurationSpec)
 		if reqConfiguration == nil {
 			log.Debug("Building call configuration", "error", "error building call configuration")
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
@@ -316,7 +316,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Info("API action create not found", "action", apiaction.Update)
 		return nil
 	}
-	reqConfiguration := builder.BuildCallConfig(callInfo, mg)
+	reqConfiguration := builder.BuildCallConfig(callInfo, mg, clientInfo.ConfigurationSpec)
 	response, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
 		log.Debug("Performing REST call", "error", err)
@@ -402,7 +402,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return nil
 	}
 
-	reqConfiguration := builder.BuildCallConfig(callInfo, mg)
+	reqConfiguration := builder.BuildCallConfig(callInfo, mg, clientInfo.ConfigurationSpec)
 	response, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
 		log.Debug("Performing REST call", "error", err)
@@ -489,7 +489,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Info("API action delete not found", "action", apiaction.Update)
 		return nil
 	}
-	reqConfiguration := builder.BuildCallConfig(callInfo, mg)
+	reqConfiguration := builder.BuildCallConfig(callInfo, mg, clientInfo.ConfigurationSpec)
 	if reqConfiguration == nil {
 		return fmt.Errorf("building call configuration")
 	}

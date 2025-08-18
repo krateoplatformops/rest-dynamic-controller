@@ -9,25 +9,28 @@ import (
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client/apiaction"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
+	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type mockUnstructuredClient struct {
-	requestedParams map[string]text.StringSet
-	requestedQuery  map[string]text.StringSet
-	requestedBody   map[string]text.StringSet
-	validateError   error
+	requestedParams  map[string]text.StringSet
+	requestedQuery   map[string]text.StringSet
+	requestedHeaders map[string]text.StringSet
+	requestedCookies map[string]text.StringSet
+	requestedBody    map[string]text.StringSet
+	validateError    error
 }
 
-func (m *mockUnstructuredClient) RequestedParams(method, path string) (text.StringSet, text.StringSet, error) {
-	return m.requestedParams[path], m.requestedQuery[path], nil
+func (m *mockUnstructuredClient) RequestedParams(method, path string) (text.StringSet, text.StringSet, text.StringSet, text.StringSet, error) {
+	return m.requestedParams[path], m.requestedQuery[path], m.requestedHeaders[path], m.requestedCookies[path], nil
 }
 
 func (m *mockUnstructuredClient) RequestedBody(method, path string) (text.StringSet, error) {
 	return m.requestedBody[path], nil
 }
 
-func (m *mockUnstructuredClient) ValidateRequest(method, path string, params, query map[string]string) error {
+func (m *mockUnstructuredClient) ValidateRequest(method, path string, params, query, headers, cookies map[string]string) error {
 	return m.validateError
 }
 
@@ -128,16 +131,6 @@ func TestBuildCallConfig(t *testing.T) {
 		IdentifierFields: []string{"id"},
 	}
 
-	// statusFields := map[string]interface{}{
-	// 	"id":     "123",
-	// 	"status": "active",
-	// }
-
-	// specFields := map[string]interface{}{
-	// 	"filter": "test",
-	// 	"name":   "testname",
-	// }
-
 	mg := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"status": map[string]interface{}{
@@ -151,7 +144,7 @@ func TestBuildCallConfig(t *testing.T) {
 		},
 	}
 
-	config := BuildCallConfig(callInfo, mg)
+	config := BuildCallConfig(callInfo, mg, nil)
 
 	if config == nil {
 		t.Fatal("expected config but got nil")
@@ -263,4 +256,53 @@ func TestProcessFields(t *testing.T) {
 	if _, exists := reqConfig.Parameters[""]; exists {
 		t.Error("empty field should not be processed")
 	}
+}
+
+func TestBuildCallConfig_WithMerge(t *testing.T) {
+	callInfo := &CallInfo{
+		Action: apiaction.Get,
+		ReqParams: &RequestedParams{
+			Query:   text.NewStringSet("filter", "api-version"),
+			Body:    text.NewStringSet("name", "description"),
+			Headers: text.NewStringSet("X-Custom-Header"),
+		},
+	}
+
+	mg := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"spec": map[string]interface{}{
+				"filter": "from-resource",
+				"name":   "from-resource",
+			},
+		},
+	}
+
+	configSpec := map[string]interface{}{
+		"query": map[string]interface{}{
+			"get": map[string]interface{}{
+				"api-version": "v1-from-config",
+				"filter":      "from-config",
+			},
+		},
+		"headers": map[string]interface{}{
+			"get": map[string]interface{}{
+				"X-Custom-Header": "from-config",
+			},
+		},
+	}
+
+	config := BuildCallConfig(callInfo, mg, configSpec)
+
+	assert.NotNil(t, config, "config should not be nil")
+
+	assert.Equal(t, "v1-from-config", config.Query["api-version"], "expected api-version to be from config")
+	assert.Equal(t, "from-resource", config.Query["filter"], "expected filter to be from resource (override)")
+
+	assert.Equal(t, "from-config", config.Headers["X-Custom-Header"], "expected header to be from config")
+
+	body, ok := config.Body.(map[string]interface{})
+	assert.True(t, ok, "body should be a map")
+
+	assert.Equal(t, "from-resource", body["name"], "expected name to be from resource (override)")
+	assert.Nil(t, body["description"], "expected description to be nil as it's not in the resource spec")
 }

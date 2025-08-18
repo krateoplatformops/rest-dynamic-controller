@@ -62,6 +62,9 @@ type Info struct {
 	// The resource to manage
 	Resource Resource `json:"resources,omitempty"`
 
+	// The spec of the configuration resource
+	ConfigurationSpec map[string]interface{}
+
 	// SetAuth function, when called, sets the authentication for the request.
 	SetAuth func(req *http.Request)
 }
@@ -93,6 +96,8 @@ type dynamicGetter struct {
 	pluralizer    pluralizer.PluralizerInterface
 }
 
+// Get retrieves the related RestDefinition for the given unstructured object.
+// The information is extracted from the RestDefinition and returned as an Info struct.
 func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 	gvr, err := g.pluralizer.GVKtoGVR(un.GroupVersionKind())
 	if err != nil {
@@ -168,7 +173,7 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 				Resource: resource,
 			}
 
-			err = g.setAuth(un, info)
+			err = g.processConfigurationRef(un, info)
 			if err != nil {
 				return nil, err
 			}
@@ -179,7 +184,7 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 	return nil, fmt.Errorf("no definitions found for '%v' in namespace: %s", gvr, un.GetNamespace())
 }
 
-func (g *dynamicGetter) setAuth(un *unstructured.Unstructured, info *Info) error {
+func (g *dynamicGetter) processConfigurationRef(un *unstructured.Unstructured, info *Info) error {
 	configRef, ok, err := unstructured.NestedStringMap(un.Object, "spec", "configurationRef")
 	if err != nil {
 		return fmt.Errorf("getting spec.configurationRef for '%v' in namespace: %s", un.GetKind(), un.GetNamespace())
@@ -209,13 +214,25 @@ func (g *dynamicGetter) setAuth(un *unstructured.Unstructured, info *Info) error
 		return err
 	}
 
-	authMethods, ok, err := unstructured.NestedMap(config.Object, "spec", "authenticationMethods")
+	configSpec, ok, err := unstructured.NestedMap(config.Object, "spec", "configuration")
+	if err != nil {
+		return err
+	}
+	if ok {
+		fmt.Printf("Found configuration spec for '%v' in namespace: %s\n", un.GetKind(), un.GetNamespace())
+		fmt.Printf("Configuration spec: %v\n", configSpec)
+		info.ConfigurationSpec = configSpec
+	}
+
+	authMethods, ok, err := unstructured.NestedMap(config.Object, "spec", "authentication")
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return nil // No auth methods defined
 	}
+	fmt.Printf("Found authentication methods for '%v' in namespace: %s\n", un.GetKind(), un.GetNamespace())
+	fmt.Printf("Authentication methods: %v\n", authMethods)
 
 	return parseAuthentication(authMethods, g.dynamicClient, info)
 }

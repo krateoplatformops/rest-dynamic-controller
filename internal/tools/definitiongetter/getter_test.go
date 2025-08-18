@@ -101,7 +101,7 @@ func TestDynamicGetter_Get(t *testing.T) {
 					"kind":       "TestResourceConfiguration",
 					"metadata":   map[string]interface{}{"name": "test-config", "namespace": "default"},
 					"spec": map[string]interface{}{
-						"authenticationMethods": map[string]interface{}{
+						"authentication": map[string]interface{}{
 							"bearer": map[string]interface{}{
 								"tokenRef": map[string]interface{}{"name": "token-secret", "namespace": "default", "key": "token"},
 							},
@@ -154,7 +154,7 @@ func TestDynamicGetter_Get(t *testing.T) {
 					"kind":       "TestResourceConfiguration",
 					"metadata":   map[string]interface{}{"name": "test-config-basic", "namespace": "default"},
 					"spec": map[string]interface{}{
-						"authenticationMethods": map[string]interface{}{
+						"authentication": map[string]interface{}{
 							"basic": map[string]interface{}{
 								"username":    "test-user",
 								"passwordRef": map[string]interface{}{"name": "password-secret", "namespace": "default", "key": "pwd"},
@@ -216,7 +216,7 @@ func TestDynamicGetter_Get(t *testing.T) {
 					"kind":       "TestResourceConfiguration",
 					"metadata":   map[string]interface{}{"name": "central-config", "namespace": "krateo-system"},
 					"spec": map[string]interface{}{
-						"authenticationMethods": map[string]interface{}{
+						"authentication": map[string]interface{}{
 							"bearer": map[string]interface{}{
 								"tokenRef": map[string]interface{}{"name": "central-token-secret", "namespace": "krateo-system", "key": "token"},
 							},
@@ -317,7 +317,7 @@ func TestDynamicGetter_Get(t *testing.T) {
 					"kind":       "TestResourceConfiguration",
 					"metadata":   map[string]interface{}{"name": "test-config", "namespace": "default"},
 					"spec": map[string]interface{}{
-						"authenticationMethods": map[string]interface{}{
+						"authentication": map[string]interface{}{
 							"bearer": map[string]interface{}{
 								"tokenRef": map[string]interface{}{"name": "token-secret", "namespace": "default", "key": "token"},
 							},
@@ -364,7 +364,7 @@ func TestDynamicGetter_Get(t *testing.T) {
 					"kind":       "TestResourceConfiguration",
 					"metadata":   map[string]interface{}{"name": "test-config-unsupported", "namespace": "default"},
 					"spec": map[string]interface{}{
-						"authenticationMethods": map[string]interface{}{
+						"authentication": map[string]interface{}{
 							"apiKey": map[string]interface{}{},
 						},
 					},
