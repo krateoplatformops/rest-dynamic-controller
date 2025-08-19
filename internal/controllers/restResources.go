@@ -455,7 +455,14 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	clientInfo, err := h.swaggerInfoGetter.Get(mg)
 	if err != nil {
 		log.Debug("Getting REST client info", "error", err)
-		return err
+		log.Info("RestDefinition or Configuration not found, CR will be deleted but real external resource will not be deleted due to missing information")
+		// We can still delete the CR, but we cannot delete the external resource.
+		err = unstructuredtools.SetConditions(mg, condition.Deleting())
+		if err != nil {
+			log.Debug("Setting condition", "error", err)
+			return err
+		}
+		return nil
 	}
 
 	cli, err := restclient.BuildClient(ctx, h.dynamicClient, clientInfo.URL)
