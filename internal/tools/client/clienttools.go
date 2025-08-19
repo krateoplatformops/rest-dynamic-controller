@@ -72,6 +72,7 @@ func buildPath(baseUrl string, path string, parameters map[string]string, query 
 	}
 	return parsed
 }
+
 func getValidResponseCode(codes *orderedmap.Map[string, *v3.Response]) ([]int, error) {
 	var validCodes []int
 	for code := codes.First(); code != nil; code = code.Next() {
@@ -157,7 +158,8 @@ func (u *UnstructuredClient) isInResource(value string, fields ...string) (bool,
 	return false, nil
 }
 
-// TODO: add headers, cookies, etc.
+// ValidateRequest is a method that validates the request parameters, query, headers, and cookies against the OpenAPI document.
+// It checks if the required parameters are present and returns an error if any required parameter is missing.
 func (u *UnstructuredClient) ValidateRequest(httpMethod string, path string, parameters map[string]string, query map[string]string, headers map[string]string, cookies map[string]string) error {
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {

@@ -184,6 +184,9 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 	return nil, fmt.Errorf("no definitions found for '%v' in namespace: %s", gvr, un.GetNamespace())
 }
 
+// processConfigurationRef processes the configuration reference for the given unstructured object.
+// It retrieves the configuration spec and authentication methods from the Configuration CR.
+// It returns an error if the configuration reference is not valid or if the retrieval fails.
 func (g *dynamicGetter) processConfigurationRef(un *unstructured.Unstructured, info *Info) error {
 	configRef, ok, err := unstructured.NestedStringMap(un.Object, "spec", "configurationRef")
 	if err != nil {
