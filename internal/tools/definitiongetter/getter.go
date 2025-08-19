@@ -105,7 +105,7 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 	}
 
 	gvrForDefinitions := schema.GroupVersionResource{
-		Group:    "swaggergen.krateo.io",
+		Group:    "ogen.krateo.io",
 		Version:  "v1alpha1",
 		Resource: "restdefinitions",
 	}

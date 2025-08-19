@@ -54,12 +54,12 @@ func TestDynamicGetter_Get(t *testing.T) {
 			}},
 			definitions: []runtime.Object{
 				&unstructured.Unstructured{Object: map[string]interface{}{
-					"apiVersion": "swaggergen.krateo.io/v1alpha1",
+					"apiVersion": "ogen.krateo.io/v1alpha1",
 					"kind":       "RestDefinition",
 					"metadata":   map[string]interface{}{"name": "test-def"},
 					"spec": map[string]interface{}{
 						"resourceGroup": "test.io",
-						"oasPath":       "/api/v1/swagger.json",
+						"oasPath":       "/api/v1/oas.yaml",
 						"resource":      map[string]interface{}{"kind": "TestResource"},
 					},
 				}},
@@ -71,7 +71,7 @@ func TestDynamicGetter_Get(t *testing.T) {
 			wantErr: false,
 			validateResult: func(t *testing.T, info *Info) {
 				assert.NotNil(t, info)
-				assert.Equal(t, "/api/v1/swagger.json", info.URL)
+				assert.Equal(t, "/api/v1/oas.yaml", info.URL)
 				assert.Nil(t, info.SetAuth, "SetAuth should be nil when no auth is configured")
 			},
 		},
@@ -85,12 +85,12 @@ func TestDynamicGetter_Get(t *testing.T) {
 			}},
 			definitions: []runtime.Object{
 				&unstructured.Unstructured{Object: map[string]interface{}{
-					"apiVersion": "swaggergen.krateo.io/v1alpha1",
+					"apiVersion": "ogen.krateo.io/v1alpha1",
 					"kind":       "RestDefinition",
 					"metadata":   map[string]interface{}{"name": "test-def"},
 					"spec": map[string]interface{}{
 						"resourceGroup": "test.io",
-						"oasPath":       "/api/v1/swagger.json",
+						"oasPath":       "/api/v1/oas.yaml",
 						"resource":      map[string]interface{}{"kind": "TestResource"},
 					},
 				}},
@@ -142,10 +142,10 @@ func TestDynamicGetter_Get(t *testing.T) {
 			}},
 			definitions: []runtime.Object{
 				&unstructured.Unstructured{Object: map[string]interface{}{
-					"apiVersion": "swaggergen.krateo.io/v1alpha1",
+					"apiVersion": "ogen.krateo.io/v1alpha1",
 					"kind":       "RestDefinition",
 					"metadata":   map[string]interface{}{"name": "test-def"},
-					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/swagger.json", "resource": map[string]interface{}{"kind": "TestResource"}},
+					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/oas.yaml", "resource": map[string]interface{}{"kind": "TestResource"}},
 				}},
 			},
 			configs: []runtime.Object{
@@ -204,10 +204,10 @@ func TestDynamicGetter_Get(t *testing.T) {
 			}},
 			definitions: []runtime.Object{
 				&unstructured.Unstructured{Object: map[string]interface{}{
-					"apiVersion": "swaggergen.krateo.io/v1alpha1",
+					"apiVersion": "ogen.krateo.io/v1alpha1",
 					"kind":       "RestDefinition",
 					"metadata":   map[string]interface{}{"name": "test-def"},
-					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/swagger.json", "resource": map[string]interface{}{"kind": "TestResource"}},
+					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/oas.yaml", "resource": map[string]interface{}{"kind": "TestResource"}},
 				}},
 			},
 			configs: []runtime.Object{
@@ -257,10 +257,10 @@ func TestDynamicGetter_Get(t *testing.T) {
 			}},
 			definitions: []runtime.Object{
 				&unstructured.Unstructured{Object: map[string]interface{}{
-					"apiVersion": "swaggergen.krateo.io/v1alpha1",
+					"apiVersion": "ogen.krateo.io/v1alpha1",
 					"kind":       "RestDefinition",
 					"metadata":   map[string]interface{}{"name": "test-def"},
-					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/swagger.json", "resource": map[string]interface{}{"kind": "TestResource"}},
+					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/oas.yaml", "resource": map[string]interface{}{"kind": "TestResource"}},
 				}},
 			},
 			setupMocks: func(m *mockPluralizerInterface) {
@@ -280,10 +280,10 @@ func TestDynamicGetter_Get(t *testing.T) {
 			}},
 			definitions: []runtime.Object{
 				&unstructured.Unstructured{Object: map[string]interface{}{
-					"apiVersion": "swaggergen.krateo.io/v1alpha1",
+					"apiVersion": "ogen.krateo.io/v1alpha1",
 					"kind":       "RestDefinition",
 					"metadata":   map[string]interface{}{"name": "test-def"},
-					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/swagger.json", "resource": map[string]interface{}{"kind": "TestResource"}},
+					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/oas.yaml", "resource": map[string]interface{}{"kind": "TestResource"}},
 				}},
 			},
 			setupMocks: func(m *mockPluralizerInterface) {
@@ -305,10 +305,10 @@ func TestDynamicGetter_Get(t *testing.T) {
 			}},
 			definitions: []runtime.Object{
 				&unstructured.Unstructured{Object: map[string]interface{}{
-					"apiVersion": "swaggergen.krateo.io/v1alpha1",
+					"apiVersion": "ogen.krateo.io/v1alpha1",
 					"kind":       "RestDefinition",
 					"metadata":   map[string]interface{}{"name": "test-def"},
-					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/swagger.json", "resource": map[string]interface{}{"kind": "TestResource"}},
+					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/oas.yaml", "resource": map[string]interface{}{"kind": "TestResource"}},
 				}},
 			},
 			configs: []runtime.Object{
@@ -352,10 +352,10 @@ func TestDynamicGetter_Get(t *testing.T) {
 			}},
 			definitions: []runtime.Object{
 				&unstructured.Unstructured{Object: map[string]interface{}{
-					"apiVersion": "swaggergen.krateo.io/v1alpha1",
+					"apiVersion": "ogen.krateo.io/v1alpha1",
 					"kind":       "RestDefinition",
 					"metadata":   map[string]interface{}{"name": "test-def"},
-					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/swagger.json", "resource": map[string]interface{}{"kind": "TestResource"}},
+					"spec":       map[string]interface{}{"resourceGroup": "test.io", "oasPath": "/oas.yaml", "resource": map[string]interface{}{"kind": "TestResource"}},
 				}},
 			},
 			configs: []runtime.Object{
@@ -388,12 +388,12 @@ func TestDynamicGetter_Get(t *testing.T) {
 			}},
 			definitions: []runtime.Object{
 				&unstructured.Unstructured{Object: map[string]interface{}{
-					"apiVersion": "swaggergen.krateo.io/v1alpha1",
+					"apiVersion": "ogen.krateo.io/v1alpha1",
 					"kind":       "RestDefinition",
 					"metadata":   map[string]interface{}{"name": "test-def"},
 					"spec": map[string]interface{}{
 						"resourceGroup": "test.io",
-						"oasPath":       "/api/v1/swagger.json",
+						"oasPath":       "/api/v1/oas.yaml",
 						"resource": map[string]interface{}{
 							"kind":        "TestResource",
 							"identifiers": []interface{}{map[string]interface{}{"foo": "bar"}}, // Invalid type, should be []string
@@ -414,7 +414,7 @@ func TestDynamicGetter_Get(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			gvrToListKind := map[schema.GroupVersionResource]string{
 				{
-					Group:    "swaggergen.krateo.io",
+					Group:    "ogen.krateo.io",
 					Version:  "v1alpha1",
 					Resource: "restdefinitions",
 				}: "RestDefinitionList",
