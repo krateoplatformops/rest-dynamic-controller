@@ -8,5 +8,6 @@ metadata:
 spec:
   name: sample-1
   description: Sample 1
-  authenticationRefs:
-    bearerAuthRef: sample-auth-sec
+  configurationRef:
+    name: my-sample-config
+    namespace: default

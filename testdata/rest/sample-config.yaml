@@ -1,0 +1,13 @@
+apiVersion: sample.krateo.io/v1alpha1
+kind: SampleConfiguration
+metadata:
+  name: my-sample-config
+  namespace: default
+spec:
+  authentication:
+    bearer:
+      # Reference to a secret containing the bearer token
+      tokenRef:
+        name: sample-auth-sec # Name of the secret
+        namespace: default    # Namespace where the secret exists
+        key: token            # Key within the secret that contains the token
