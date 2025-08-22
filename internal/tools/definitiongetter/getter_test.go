@@ -156,7 +156,7 @@ func TestDynamicGetter_Get(t *testing.T) {
 					"spec": map[string]interface{}{
 						"authentication": map[string]interface{}{
 							"basic": map[string]interface{}{
-								"username":    "test-user",
+								"usernameRef": map[string]interface{}{"name": "username-secret", "namespace": "default", "key": "user"},
 								"passwordRef": map[string]interface{}{"name": "password-secret", "namespace": "default", "key": "pwd"},
 							},
 						},
@@ -164,6 +164,12 @@ func TestDynamicGetter_Get(t *testing.T) {
 				}},
 			},
 			secrets: []runtime.Object{
+				&unstructured.Unstructured{Object: map[string]interface{}{
+					"apiVersion": "v1",
+					"kind":       "Secret",
+					"metadata":   map[string]interface{}{"name": "username-secret", "namespace": "default"},
+					"data":       map[string]interface{}{"user": base64.StdEncoding.EncodeToString([]byte("test-user"))},
+				}},
 				&unstructured.Unstructured{Object: map[string]interface{}{
 					"apiVersion": "v1",
 					"kind":       "Secret",

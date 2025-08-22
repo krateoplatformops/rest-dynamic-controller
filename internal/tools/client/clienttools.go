@@ -182,7 +182,7 @@ func (u *UnstructuredClient) ValidateRequest(httpMethod string, path string, par
 				}
 			}
 			if param.In == "header" {
-				if _, ok := headers[param.Name]; !ok {
+				if _, ok := headers[param.Name]; !ok && !isAuthorizationHeader(param.Name) {
 					return fmt.Errorf("missing header: %s", param.Name)
 				}
 			}
@@ -345,4 +345,9 @@ func BuildClient(ctx context.Context, kubeclient dynamic.Interface, swaggerPath 
 		Server:    doc.Model.Servers[0].URL,
 		DocScheme: doc,
 	}, nil
+}
+
+// isAuthorizationHeader checks if the given header is an authorization header or contains "authorization" (case-insensitive).
+func isAuthorizationHeader(header string) bool {
+	return strings.Contains(strings.ToLower(header), "authorization")
 }

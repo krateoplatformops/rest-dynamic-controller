@@ -256,12 +256,21 @@ func parseAuthentication(authMethods map[string]interface{}, dyn dynamic.Interfa
 
 		switch authType {
 		case restclient.AuthTypeBasic:
-			username, ok, err := unstructured.NestedString(authMethodMap, "username")
+			usernameRef, ok, err := unstructured.NestedStringMap(authMethodMap, "usernameRef")
 			if err != nil {
 				return err
 			}
 			if !ok {
-				return fmt.Errorf("missing username in basic auth")
+				return fmt.Errorf("missing usernameRef in basic auth")
+			}
+
+			username, err := GetSecret(context.Background(), dyn, SecretKeySelector{
+				Name:      usernameRef["name"],
+				Namespace: usernameRef["namespace"],
+				Key:       usernameRef["key"],
+			})
+			if err != nil {
+				return err
 			}
 
 			passwordRef, ok, err := unstructured.NestedStringMap(authMethodMap, "passwordRef")
