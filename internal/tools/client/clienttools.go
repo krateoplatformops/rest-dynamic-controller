@@ -292,6 +292,7 @@ func (u *UnstructuredClient) RequestedParams(httpMethod string, path string) (pa
 			cookies.Add(param.Name)
 		}
 	}
+	//fmt.Printf("RequestedParams: parameters=%v, query=%v, headers=%v, cookies=%v\n", parameters, query, headers, cookies)
 	return
 }
 

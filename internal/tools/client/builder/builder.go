@@ -182,6 +182,7 @@ func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfigu
 				continue
 			}
 			reqConfiguration.Parameters[field] = stringVal
+			//fmt.Printf("Path param set: %s=%s\n", field, stringVal)
 		}
 
 		if callInfo.ReqParams.Query.Contains(field) {
@@ -190,6 +191,7 @@ func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfigu
 				continue
 			}
 			reqConfiguration.Query[field] = stringVal
+			//fmt.Printf("Query param set: %s=%s\n", field, stringVal)
 
 		}
 		// Note: probably headers and cookies are better to be set ONLY in the Configuration CR spec
