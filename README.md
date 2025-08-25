@@ -98,3 +98,4 @@ The following environment variables can be configured in the rest-dynamic-contro
 | URL_PLURALS | BFF plurals endpoint | `http://snowplow.krateo-system.svc.cluster.local:8081/api-info/names` |
 | REST_CONTROLLER_MAX_ERROR_RETRY_INTERVAL | The maximum interval between retries when an error occurs. This should be less than the half of the resync interval. | `30s` | 
 | REST_CONTROLLER_MIN_ERROR_RETRY_INTERVAL | The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval. | `1s` | 
+| REST_CONTROLLER_METRICS_SERVER_PORT | The port where the metrics server will be listening. If not set, the metrics server is disabled. |  |
