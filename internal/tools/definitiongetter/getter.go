@@ -222,8 +222,8 @@ func (g *dynamicGetter) processConfigurationRef(un *unstructured.Unstructured, i
 		return err
 	}
 	if ok {
-		fmt.Printf("Found configuration spec for '%v' in namespace: %s\n", un.GetKind(), un.GetNamespace())
-		fmt.Printf("Configuration spec: %v\n", configSpec)
+		//fmt.Printf("Found configuration spec for '%v' in namespace: %s\n", un.GetKind(), un.GetNamespace())
+		//fmt.Printf("Configuration spec: %v\n", configSpec)
 		info.ConfigurationSpec = configSpec
 	}
 
@@ -234,8 +234,8 @@ func (g *dynamicGetter) processConfigurationRef(un *unstructured.Unstructured, i
 	if !ok {
 		return nil // No auth methods defined
 	}
-	fmt.Printf("Found authentication methods for '%v' in namespace: %s\n", un.GetKind(), un.GetNamespace())
-	fmt.Printf("Authentication methods: %v\n", authMethods)
+	//fmt.Printf("Found authentication methods for '%v' in namespace: %s\n", un.GetKind(), un.GetNamespace())
+	//fmt.Printf("Authentication methods: %v\n", authMethods)
 
 	return parseAuthentication(authMethods, g.dynamicClient, info)
 }
