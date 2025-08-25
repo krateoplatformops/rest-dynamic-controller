@@ -48,7 +48,7 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		}
 	}
 
-	err := u.ValidateRequest(httpMethod, path, opts.Parameters, opts.Query)
+	err := u.ValidateRequest(httpMethod, path, opts.Parameters, opts.Query, opts.Headers, opts.Cookies)
 	if err != nil {
 		return Response{}, err
 	}
@@ -71,12 +71,20 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		headers.Set("Content-Type", "application/json")
 	}
 
+	for k, v := range opts.Headers {
+		headers.Set(k, v)
+	}
+
 	req := &http.Request{
 		Method: httpMethod,
 		URL:    uri,
 		Proto:  "HTTP/1.1",
 		Body:   io.NopCloser(bytes.NewReader(payload)),
 		Header: headers,
+	}
+
+	for k, v := range opts.Cookies {
+		req.AddCookie(&http.Cookie{Name: k, Value: v})
 	}
 
 	if u.Debug {

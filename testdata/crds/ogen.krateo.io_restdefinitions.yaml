@@ -3,10 +3,10 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.1
-  name: restdefinitions.swaggergen.krateo.io
+    controller-gen.kubebuilder.io/version: v0.16.5
+  name: restdefinitions.ogen.krateo.io
 spec:
-  group: swaggergen.krateo.io
+  group: ogen.krateo.io
   names:
     categories:
     - krateo
@@ -24,7 +24,6 @@ spec:
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: AGE
-      priority: 10
       type: date
     - jsonPath: .status.resource.apiVersion
       name: API VERSION
@@ -65,7 +64,7 @@ spec:
             properties:
               oasPath:
                 description: |-
-                  Path to the OpenAPI specification. Supports the following formats: (note that the configmap should be in the same namespace as the RestDefinition)
+                  Path to the OpenAPI specification. This value can change over time, for example if the OAS file is updated but be sure to not change the requestbody of the `create` verb.
                   - configmap://<namespace>/<name>/<key>
                   - http(s)://<url>
                 pattern: ^(configmap:\/\/([a-z0-9-]+)\/([a-z0-9-]+)\/([a-zA-Z0-9.-_]+)|https?:\/\/\S+)$
@@ -73,15 +72,70 @@ spec:
               resource:
                 description: The resource to manage
                 properties:
+                  additionalStatusFields:
+                    description: 'AdditionalStatusFields: the list of fields to use
+                      as additional status fields - used to populate the status of
+                      the resource'
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-validations:
+                    - message: AdditionalStatusFields are immutable, you cannot change
+                        them once the CRD has been generated
+                      rule: self == oldSelf
+                  configurationFields:
+                    description: 'ConfigurationFields: the list of fields to use as
+                      configuration fields'
+                    items:
+                      properties:
+                        fromOpenAPI:
+                          properties:
+                            in:
+                              type: string
+                            name:
+                              type: string
+                          required:
+                          - in
+                          - name
+                          type: object
+                        fromRestDefinition:
+                          properties:
+                            actions:
+                              description: 'Actions: the list of actions this configuration
+                                applies to. Use ["*"] to apply to all actions.'
+                              items:
+                                type: string
+                              minItems: 1
+                              type: array
+                          required:
+                          - actions
+                          type: object
+                      required:
+                      - fromOpenAPI
+                      - fromRestDefinition
+                      type: object
+                    type: array
+                    x-kubernetes-validations:
+                    - message: ConfigurationFields are immutable, you cannot change
+                        them once the CRD has been generated
+                      rule: self == oldSelf
                   identifiers:
                     description: 'Identifiers: the list of fields to use as identifiers
                       - used to populate the status of the resource'
                     items:
                       type: string
                     type: array
+                    x-kubernetes-validations:
+                    - message: Identifiers are immutable, you cannot change them once
+                        the CRD has been generated
+                      rule: self == oldSelf
                   kind:
                     description: 'Name: the name of the resource to manage'
                     type: string
+                    x-kubernetes-validations:
+                    - message: Kind is immutable, you cannot change that once the
+                        CRD has been generated
+                      rule: self == oldSelf
                   verbsDescription:
                     description: 'VerbsDescription: the list of verbs to use on this
                       resource'
@@ -109,7 +163,7 @@ spec:
                           type: string
                         path:
                           description: 'Path: the path to the api - has to be the
-                            same path as the one in the swagger file you are referencing'
+                            same path as the one in the OAS file you are referencing'
                           type: string
                       required:
                       - action
@@ -119,29 +173,23 @@ spec:
                     type: array
                 required:
                 - kind
+                - verbsDescription
                 type: object
               resourceGroup:
                 description: 'Group: the group of the resource to manage'
                 type: string
+                x-kubernetes-validations:
+                - message: ResourceGroup is immutable, you cannot change that once
+                    the CRD has been generated
+                  rule: self == oldSelf
             required:
             - oasPath
+            - resource
             - resourceGroup
             type: object
           status:
             description: RestDefinitionStatus is the status of a RestDefinition.
             properties:
-              authentications:
-                description: 'Authentications: the list of authentications to use'
-                items:
-                  properties:
-                    apiVersion:
-                      description: 'APIVersion: the api version of the resource'
-                      type: string
-                    kind:
-                      description: 'Kind: the kind of the resource'
-                      type: string
-                  type: object
-                type: array
               conditions:
                 description: Conditions of the resource.
                 items:
@@ -178,8 +226,21 @@ spec:
                   - type
                   type: object
                 type: array
+              configuration:
+                description: 'Configuration: the configuration of the resource'
+                properties:
+                  apiVersion:
+                    description: 'APIVersion: the api version of the resource'
+                    type: string
+                  kind:
+                    description: 'Kind: the kind of the resource'
+                    type: string
+                type: object
+              digest:
+                description: 'Digest: the digest of the managed resources'
+                type: string
               oasPath:
-                description: 'OASPath: the path to the OAS Specification file'
+                description: 'OASPath: the path to the OAS Specification file.'
                 type: string
               resource:
                 description: 'Resource: the resource to manage'
@@ -191,6 +252,8 @@ spec:
                     description: 'Kind: the kind of the resource'
                     type: string
                 type: object
+            required:
+            - oasPath
             type: object
         type: object
     served: true

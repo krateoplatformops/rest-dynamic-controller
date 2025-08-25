@@ -2,6 +2,7 @@ package builder
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -9,25 +10,37 @@ import (
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client/apiaction"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
+	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
+// mockUnstructuredClient is a mock implementation of the UnstructuredClientInterface for testing.
 type mockUnstructuredClient struct {
-	requestedParams map[string]text.StringSet
-	requestedQuery  map[string]text.StringSet
-	requestedBody   map[string]text.StringSet
-	validateError   error
+	requestedParams  map[string]text.StringSet
+	requestedQuery   map[string]text.StringSet
+	requestedHeaders map[string]text.StringSet
+	requestedCookies map[string]text.StringSet
+	requestedBody    map[string]text.StringSet
+	validateError    error
+	paramsError      error
+	bodyError        error
 }
 
-func (m *mockUnstructuredClient) RequestedParams(method, path string) (text.StringSet, text.StringSet, error) {
-	return m.requestedParams[path], m.requestedQuery[path], nil
+func (m *mockUnstructuredClient) RequestedParams(method, path string) (text.StringSet, text.StringSet, text.StringSet, text.StringSet, error) {
+	if m.paramsError != nil {
+		return nil, nil, nil, nil, m.paramsError
+	}
+	return m.requestedParams[path], m.requestedQuery[path], m.requestedHeaders[path], m.requestedCookies[path], nil
 }
 
 func (m *mockUnstructuredClient) RequestedBody(method, path string) (text.StringSet, error) {
+	if m.bodyError != nil {
+		return nil, m.bodyError
+	}
 	return m.requestedBody[path], nil
 }
 
-func (m *mockUnstructuredClient) ValidateRequest(method, path string, params, query map[string]string) error {
+func (m *mockUnstructuredClient) ValidateRequest(method, path string, params, query, headers, cookies map[string]string) error {
 	return m.validateError
 }
 
@@ -40,84 +53,127 @@ func (m *mockUnstructuredClient) FindBy(ctx context.Context, cli *http.Client, p
 }
 
 func TestAPICallBuilder(t *testing.T) {
-	mockClient := &mockUnstructuredClient{
-		requestedParams: map[string]text.StringSet{
-			"/test": text.NewStringSet("id"),
-		},
-		requestedQuery: map[string]text.StringSet{
-			"/test": text.NewStringSet("filter"),
-		},
-		requestedBody: map[string]text.StringSet{
-			"/test": text.NewStringSet("name"),
-		},
-	}
-
 	info := &getter.Info{
 		Resource: getter.Resource{
 			Identifiers: []string{"id"},
 			VerbsDescription: []getter.VerbsDescription{
-				{
-					Action: "get",
-					Method: "GET",
-					Path:   "/test",
-				},
-				{
-					Action: "create",
-					Method: "POST",
-					Path:   "/test",
-				},
+				{Action: "get", Method: "GET", Path: "/test"},
+				{Action: "create", Method: "POST", Path: "/test"},
+				{Action: "update", Method: "PUT", Path: "/test"},
+				{Action: "delete", Method: "DELETE", Path: "/test"},
+				{Action: "findBy", Method: "GET", Path: "/test"},
 			},
 		},
 	}
 
-	tests := []struct {
+	testCases := []struct {
 		name           string
+		client         *mockUnstructuredClient
 		action         apiaction.APIAction
 		expectCallInfo bool
+		expectedMethod string
 		expectError    bool
+		expectedErrMsg string
 	}{
 		{
-			name:           "GET action",
-			action:         apiaction.Get,
+			name:   "GET action",
+			action: apiaction.Get,
+			client: &mockUnstructuredClient{
+				requestedParams: map[string]text.StringSet{"/test": text.NewStringSet("id")},
+			},
 			expectCallInfo: true,
+			expectedMethod: "GET",
+			expectError:    false,
+		},
+		{
+			name:   "CREATE action",
+			action: apiaction.Create,
+			client: &mockUnstructuredClient{
+				requestedBody: map[string]text.StringSet{"/test": text.NewStringSet("name")},
+			},
+			expectCallInfo: true,
+			expectedMethod: "POST",
+			expectError:    false,
+		},
+		{
+			name:   "UPDATE action",
+			action: apiaction.Update,
+			client: &mockUnstructuredClient{
+				requestedBody: map[string]text.StringSet{"/test": text.NewStringSet("name")},
+			},
+			expectCallInfo: true,
+			expectedMethod: "PUT",
+			expectError:    false,
+		},
+		{
+			name:           "DELETE action",
+			action:         apiaction.Delete,
+			client:         &mockUnstructuredClient{},
+			expectCallInfo: true,
+			expectedMethod: "DELETE",
 			expectError:    false,
 		},
 		{
 			name:           "FindBy action",
 			action:         apiaction.FindBy,
-			expectCallInfo: false,
+			client:         &mockUnstructuredClient{},
+			expectCallInfo: true,
+			expectedMethod: "GET",
 			expectError:    false,
 		},
 		{
 			name:           "Unknown action",
 			action:         apiaction.APIAction("unknown"),
+			client:         &mockUnstructuredClient{},
 			expectCallInfo: false,
 			expectError:    false,
 		},
+		{
+			name:   "Error from RequestedParams",
+			action: apiaction.Get,
+			client: &mockUnstructuredClient{
+				paramsError: errors.New("client params error"),
+			},
+			expectCallInfo: false,
+			expectError:    true,
+			expectedErrMsg: "retrieving requested params: client params error",
+		},
+		{
+			name:   "Error from RequestedBody",
+			action: apiaction.Create,
+			client: &mockUnstructuredClient{
+				bodyError: errors.New("client body error"),
+			},
+			expectCallInfo: false,
+			expectError:    true,
+			expectedErrMsg: "retrieving requested body params: client body error",
+		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			apiFunc, callInfo, err := APICallBuilder(mockClient, info, tt.action)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, callInfo, err := APICallBuilder(tc.client, info, tc.action)
 
-			if tt.expectError && err == nil {
-				t.Error("expected error but got none")
+			if tc.expectError {
+				assert.Error(t, err)
+				assert.EqualError(t, err, tc.expectedErrMsg)
+			} else {
+				assert.NoError(t, err)
 			}
-			if !tt.expectError && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-			if tt.expectCallInfo && callInfo == nil {
-				t.Error("expected callInfo but got nil")
-			}
-			if !tt.expectCallInfo && callInfo != nil && apiFunc != nil {
-				t.Error("expected nil callInfo and apiFunc")
+
+			if tc.expectCallInfo {
+				assert.NotNil(t, callInfo)
+				// apiFunc check is tricky because of function pointers, so we check callInfo
+				assert.Equal(t, tc.expectedMethod, callInfo.Method)
+			} else {
+				assert.Nil(t, callInfo)
 			}
 		})
 	}
 }
 
 func TestBuildCallConfig(t *testing.T) {
-	callInfo := &CallInfo{
+	baseCallInfo := &CallInfo{
 		Path:   "/test/{id}",
 		Method: "GET",
 		ReqParams: &RequestedParams{
@@ -128,17 +184,7 @@ func TestBuildCallConfig(t *testing.T) {
 		IdentifierFields: []string{"id"},
 	}
 
-	// statusFields := map[string]interface{}{
-	// 	"id":     "123",
-	// 	"status": "active",
-	// }
-
-	// specFields := map[string]interface{}{
-	// 	"filter": "test",
-	// 	"name":   "testname",
-	// }
-
-	mg := &unstructured.Unstructured{
+	baseMg := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"status": map[string]interface{}{
 				"id":     "123",
@@ -151,116 +197,308 @@ func TestBuildCallConfig(t *testing.T) {
 		},
 	}
 
-	config := BuildCallConfig(callInfo, mg)
-
-	if config == nil {
-		t.Fatal("expected config but got nil")
+	testCases := []struct {
+		name             string
+		callInfo         *CallInfo
+		mg               *unstructured.Unstructured
+		configSpec       map[string]interface{}
+		expectNil        bool
+		expectedMethod   string
+		expectedParams   map[string]string
+		expectedQuery    map[string]string
+		expectedBodyKeys []string
+	}{
+		{
+			name:             "Happy path",
+			callInfo:         baseCallInfo,
+			mg:               baseMg,
+			configSpec:       nil,
+			expectNil:        false,
+			expectedMethod:   "GET",
+			expectedParams:   map[string]string{"id": "123"},
+			expectedQuery:    map[string]string{"filter": "test"},
+			expectedBodyKeys: []string{"name"},
+		},
+		{
+			name:      "Nil callInfo",
+			callInfo:  nil,
+			mg:        baseMg,
+			expectNil: true,
+		},
+		{
+			name:      "Nil managed resource",
+			callInfo:  baseCallInfo,
+			mg:        nil,
+			expectNil: true,
+		},
+		{
+			name:     "Resource with missing status",
+			callInfo: baseCallInfo,
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"filter": "test",
+						"name":   "testname",
+						"id":     "456", // ID is now in spec
+					},
+				},
+			},
+			expectNil:        false,
+			expectedMethod:   "GET",
+			expectedParams:   map[string]string{"id": "456"},
+			expectedQuery:    map[string]string{"filter": "test"},
+			expectedBodyKeys: []string{"name"},
+		},
+		{
+			name:     "Resource with missing spec",
+			callInfo: baseCallInfo,
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"status": map[string]interface{}{
+						"id": "123",
+					},
+				},
+			},
+			expectNil:        false,
+			expectedMethod:   "GET",
+			expectedParams:   map[string]string{"id": "123"},
+			expectedQuery:    map[string]string{},
+			expectedBodyKeys: []string{},
+		},
 	}
 
-	if config.Method != "GET" {
-		t.Errorf("expected method GET, got %s", config.Method)
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			config := BuildCallConfig(tc.callInfo, tc.mg, tc.configSpec)
 
-	if config.Parameters["id"] != "123" {
-		t.Errorf("expected parameter id=123, got %s", config.Parameters["id"])
-	}
+			if tc.expectNil {
+				assert.Nil(t, config)
+				return
+			}
 
-	if config.Query["filter"] != "test" {
-		t.Errorf("expected query filter=test, got %s", config.Query["filter"])
-	}
+			assert.NotNil(t, config)
+			assert.Equal(t, tc.expectedMethod, config.Method)
+			assert.Equal(t, tc.expectedParams, config.Parameters)
+			assert.Equal(t, tc.expectedQuery, config.Query)
 
-	if config.Body == nil {
-		t.Fatal("expected body but got nil")
-	}
-
-	bMap, ok := config.Body.(map[string]interface{})
-	if !ok {
-		t.Fatal("expected body to be a map")
-	}
-
-	if bMap["name"] != "testname" {
-		t.Errorf("expected body name=testname, got %v", bMap["name"])
+			bodyMap, ok := config.Body.(map[string]interface{})
+			assert.True(t, ok)
+			assert.Len(t, bodyMap, len(tc.expectedBodyKeys))
+			for _, key := range tc.expectedBodyKeys {
+				assert.Contains(t, bodyMap, key)
+			}
+		})
 	}
 }
 
 func TestIsResourceKnown(t *testing.T) {
-	mockClient := &mockUnstructuredClient{
-		requestedParams: map[string]text.StringSet{
-			"/test": text.NewStringSet("id"),
-		},
-		requestedQuery: map[string]text.StringSet{
-			"/test": text.NewStringSet(),
-		},
-		validateError: nil,
-	}
-
-	info := &getter.Info{
+	baseInfo := &getter.Info{
 		Resource: getter.Resource{
 			Identifiers: []string{"id"},
 			VerbsDescription: []getter.VerbsDescription{
-				{
-					Action: "get",
-					Method: "GET",
-					Path:   "/test",
-				},
+				{Action: "get", Method: "GET", Path: "/test"},
 			},
 		},
 	}
 
-	mg := &unstructured.Unstructured{
+	baseMg := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"status": map[string]interface{}{
-				"id": "123",
-			},
-			"spec": map[string]interface{}{},
+			"status": map[string]interface{}{"id": "123"},
 		},
 	}
 
-	result := IsResourceKnown(mockClient, info, mg)
+	testCases := []struct {
+		name   string
+		client restclient.UnstructuredClientInterface
+		info   *getter.Info
+		mg     *unstructured.Unstructured
+		expect bool
+	}{
+		{
+			name: "Happy path, resource is known",
+			client: &mockUnstructuredClient{
+				requestedParams: map[string]text.StringSet{"/test": text.NewStringSet("id")},
+				validateError:   nil,
+			},
+			info:   baseInfo,
+			mg:     baseMg,
+			expect: true,
+		},
+		{
+			name:   "Nil clientInfo",
+			client: &mockUnstructuredClient{},
+			info:   nil,
+			mg:     baseMg,
+			expect: false,
+		},
+		{
+			name:   "Nil managed resource",
+			client: &mockUnstructuredClient{},
+			info:   baseInfo,
+			mg:     nil,
+			expect: false,
+		},
+		{
+			name: "Error from APICallBuilder",
+			client: &mockUnstructuredClient{
+				paramsError: errors.New("client error"),
+			},
+			info:   baseInfo,
+			mg:     baseMg,
+			expect: false,
+		},
+		{
+			name: "Error from ValidateRequest",
+			client: &mockUnstructuredClient{
+				requestedParams: map[string]text.StringSet{"/test": text.NewStringSet("id")},
+				validateError:   errors.New("validation failed"),
+			},
+			info:   baseInfo,
+			mg:     baseMg,
+			expect: false,
+		},
+	}
 
-	if !result {
-		t.Error("expected resource to be known")
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := IsResourceKnown(tc.client, tc.info, tc.mg)
+			assert.Equal(t, tc.expect, result)
+		})
 	}
 }
 
 func TestProcessFields(t *testing.T) {
-	callInfo := &CallInfo{
-		ReqParams: &RequestedParams{
-			Parameters: text.NewStringSet("id"),
-			Query:      text.NewStringSet("filter"),
-			Body:       text.NewStringSet("name"),
+	testCases := []struct {
+		name           string
+		callInfo       *CallInfo
+		fields         map[string]interface{}
+		expectedParams map[string]string
+		expectedQuery  map[string]string
+		expectedBody   map[string]interface{}
+	}{
+		{
+			name: "Separate fields for path, query, and body",
+			callInfo: &CallInfo{
+				ReqParams: &RequestedParams{
+					Parameters: text.NewStringSet("id"),
+					Query:      text.NewStringSet("filter"),
+					Body:       text.NewStringSet("name"),
+				},
+			},
+			fields: map[string]interface{}{
+				"id":     "123",
+				"filter": "test",
+				"name":   "testname",
+				"":       "empty", // should be skipped
+			},
+			expectedParams: map[string]string{"id": "123"},
+			expectedQuery:  map[string]string{"filter": "test"},
+			expectedBody:   map[string]interface{}{"name": "testname"},
+		},
+		{
+			name: "Field used in Path and Body",
+			callInfo: &CallInfo{
+				ReqParams: &RequestedParams{
+					Parameters: text.NewStringSet("id"),
+					Query:      text.NewStringSet("filter"),
+					Body:       text.NewStringSet("id", "name"),
+				},
+			},
+			fields: map[string]interface{}{
+				"id":   "123",
+				"name": "testname",
+			},
+			expectedParams: map[string]string{"id": "123"},
+			expectedQuery:  map[string]string{},
+			expectedBody:   map[string]interface{}{"id": "123", "name": "testname"},
 		},
 	}
 
-	reqConfig := &restclient.RequestConfiguration{
-		Parameters: make(map[string]string),
-		Query:      make(map[string]string),
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			reqConfig := &restclient.RequestConfiguration{
+				Parameters: make(map[string]string),
+				Query:      make(map[string]string),
+			}
+			mapBody := make(map[string]interface{})
+
+			processFields(tc.callInfo, tc.fields, reqConfig, mapBody)
+
+			assert.Equal(t, tc.expectedParams, reqConfig.Parameters)
+			assert.Equal(t, tc.expectedQuery, reqConfig.Query)
+			assert.Equal(t, tc.expectedBody, mapBody)
+
+			_, exists := reqConfig.Parameters[""]
+			assert.False(t, exists, "empty field should not be processed")
+		})
+	}
+}
+
+func TestBuildCallConfig_WithMerge(t *testing.T) {
+	testCases := []struct {
+		name            string
+		callInfo        *CallInfo
+		mg              *unstructured.Unstructured
+		configSpec      map[string]interface{}
+		expectedQuery   map[string]string
+		expectedHeaders map[string]string
+		expectedBody    map[string]interface{}
+	}{
+		{
+			name: "Values from config and resource are merged correctly",
+			callInfo: &CallInfo{
+				Action: apiaction.Get,
+				ReqParams: &RequestedParams{
+					Query:   text.NewStringSet("filter", "api-version"),
+					Body:    text.NewStringSet("name", "description"),
+					Headers: text.NewStringSet("X-Custom-Header"),
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"filter": "from-resource", // This should override the value from config
+						"name":   "from-resource",
+					},
+				},
+			},
+			configSpec: map[string]interface{}{
+				"query": map[string]interface{}{
+					"get": map[string]interface{}{
+						"api-version": "v1-from-config",
+						"filter":      "from-config",
+					},
+				},
+				"headers": map[string]interface{}{
+					"get": map[string]interface{}{
+						"X-Custom-Header": "from-config",
+					},
+				},
+			},
+			expectedQuery: map[string]string{
+				"api-version": "v1-from-config",
+				"filter":      "from-resource",
+			},
+			expectedHeaders: map[string]string{
+				"X-Custom-Header": "from-config",
+			},
+			expectedBody: map[string]interface{}{
+				"name": "from-resource",
+			},
+		},
 	}
 
-	mapBody := make(map[string]interface{})
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			config := BuildCallConfig(tc.callInfo, tc.mg, tc.configSpec)
 
-	fields := map[string]interface{}{
-		"id":     "123",
-		"filter": "test",
-		"name":   "testname",
-		"":       "empty", // should be skipped
-	}
+			assert.NotNil(t, config, "config should not be nil")
+			assert.Equal(t, tc.expectedQuery, config.Query)
+			assert.Equal(t, tc.expectedHeaders, config.Headers)
 
-	processFields(callInfo, fields, reqConfig, mapBody)
-
-	if reqConfig.Parameters["id"] != "123" {
-		t.Errorf("expected parameter id=123, got %s", reqConfig.Parameters["id"])
-	}
-
-	if reqConfig.Query["filter"] != "test" {
-		t.Errorf("expected query filter=test, got %s", reqConfig.Query["filter"])
-	}
-
-	if mapBody["name"] != "testname" {
-		t.Errorf("expected body name=testname, got %v", mapBody["name"])
-	}
-
-	if _, exists := reqConfig.Parameters[""]; exists {
-		t.Error("empty field should not be processed")
+			body, ok := config.Body.(map[string]interface{})
+			assert.True(t, ok, "body should be a map")
+			assert.Equal(t, tc.expectedBody, body)
+		})
 	}
 }

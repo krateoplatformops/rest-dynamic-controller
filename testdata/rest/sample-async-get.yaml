@@ -9,5 +9,6 @@ spec:
   id: "123"
   name: sample-async-get
   description: Sample with async operations for GET requests
-  authenticationRefs:
-    bearerAuthRef: sample-auth-sec
+  configurationRef:
+    name: my-sample-config
+    namespace: default 

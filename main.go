@@ -4,16 +4,20 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/go-logr/logr"
+	"github.com/krateoplatformops/plumbing/ptr"
+	prettylog "github.com/krateoplatformops/plumbing/slogs/pretty"
 	"github.com/krateoplatformops/snowplow/plumbing/env"
 	genctrl "github.com/krateoplatformops/unstructured-runtime"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	metricsserver "github.com/krateoplatformops/unstructured-runtime/pkg/metrics/server"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/workqueue"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	restResources "github.com/krateoplatformops/rest-dynamic-controller/internal/controllers"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
@@ -56,6 +60,8 @@ func main() {
 		env.Duration("REST_CONTROLLER_MAX_ERROR_RETRY_INTERVAL", 30*time.Second), "The maximum interval between retries when an error occurs. This should be less than the half of the resync interval.")
 	minErrorRetryInterval := flag.Duration("min-error-retry-interval",
 		env.Duration("REST_CONTROLLER_MIN_ERROR_RETRY_INTERVAL", 1*time.Second), "The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval.")
+	metricsServerPort := flag.Int("metrics-server-port",
+		env.Int("REST_CONTROLLER_METRICS_SERVER_PORT", 0), "The address to bind the metrics server to. If empty, metrics server is disabled.")
 
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
@@ -64,8 +70,21 @@ func main() {
 
 	flag.Parse()
 
-	zl := zap.New(zap.UseDevMode(*debug))
-	log := logging.NewLogrLogger(zl.WithName(serviceName))
+	logLevel := slog.LevelInfo
+	if *debug {
+		logLevel = slog.LevelDebug
+	}
+
+	lh := prettylog.New(&slog.HandlerOptions{
+		Level:     logLevel,
+		AddSource: false,
+	},
+		prettylog.WithDestinationWriter(os.Stderr),
+		prettylog.WithColor(),
+		prettylog.WithOutputEmptyAttrs(),
+	)
+
+	log := logging.NewLogrLogger(logr.FromSlogHandler(slog.New(lh).Handler()))
 
 	// Kubernetes configuration
 	var cfg *rest.Config
@@ -73,23 +92,23 @@ func main() {
 	if len(*kubeconfig) > 0 {
 		cfg, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
 	} else {
-		cfg, err = rest.InClusterConfig()
+		cfg, err = genctrl.GetConfig()
 	}
 	if err != nil {
-		log.Debug("Building kubeconfig", "error", err)
-		return
+		log.Error(err, "Building kubeconfig.")
+		os.Exit(1)
 	}
 
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
-		log.Debug("Creating dynamic client.", "error", err)
-		return
+		log.Error(err, "Creating dynamic client.")
+		os.Exit(1)
 	}
 
 	discovery, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
-		log.Debug("Creating discovery client.", "error", err)
-		return
+		log.Error(err, "Creating discovery client.")
+		os.Exit(1)
 	}
 
 	cachedDisc := memory.NewMemCacheClient(discovery)
@@ -100,8 +119,17 @@ func main() {
 	var swg getter.Getter
 	swg, err = getter.Dynamic(cfg, pluralizer)
 	if err != nil {
-		log.Debug("Creating chart url info getter.", "error", err)
-		return
+		log.Error(err, "Creating definition getter.")
+		os.Exit(1)
+	}
+
+	metricsServerBindAddress := ""
+	if ptr.Deref(metricsServerPort, 0) != 0 {
+		log.Info("Metrics server enabled", "bindAddress", fmt.Sprintf(":%d", *metricsServerPort))
+		metricsServerBindAddress = fmt.Sprintf(":%d", *metricsServerPort)
+	} else {
+		log.Info("Metrics server disabled")
+		metricsServerBindAddress = "0"
 	}
 
 	log.WithValues("build", Build).
@@ -118,11 +146,20 @@ func main() {
 
 	handler = restResources.NewHandler(cfg, log, swg, *pluralizer)
 	if handler == nil {
-		log.Debug("Creating handler for controller.", "error", "handler is nil")
-		return
+		log.Error(fmt.Errorf("handler is nil"), "Creating handler for controller.")
+		os.Exit(1)
 	}
+	ctx, cancel := signal.NotifyContext(context.Background(), []os.Signal{
+		os.Interrupt,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGKILL,
+		syscall.SIGHUP,
+		syscall.SIGQUIT,
+	}...)
+	defer cancel()
 
-	controller := genctrl.New(genctrl.Options{
+	controller := genctrl.New(ctx, genctrl.Options{
 		Discovery:      cachedDisc,
 		Client:         dyn,
 		ResyncInterval: *resyncInterval,
@@ -139,22 +176,15 @@ func main() {
 		ListWatcher:       controller.ListWatcherConfiguration{},
 		Pluralizer:        *pluralizer,
 		GlobalRateLimiter: workqueue.NewExponentialTimedFailureRateLimiter[any](*minErrorRetryInterval, *maxErrorRetryInterval),
+		Metrics: metricsserver.Options{
+			BindAddress: metricsServerBindAddress,
+		},
 	})
 	controller.SetExternalClient(handler)
 
-	ctx, cancel := signal.NotifyContext(context.Background(), []os.Signal{
-		os.Interrupt,
-		syscall.SIGINT,
-		syscall.SIGTERM,
-		syscall.SIGKILL,
-		syscall.SIGHUP,
-		syscall.SIGQUIT,
-	}...)
-	defer cancel()
-
 	err = controller.Run(ctx, *workers)
 	if err != nil {
-		log.Debug("Running controller.", "error", err)
-		return
+		log.Error(err, "Running controller.")
+		os.Exit(1)
 	}
 }

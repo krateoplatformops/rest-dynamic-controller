@@ -165,7 +165,7 @@ func stopMockServer() {
 func TestMain(m *testing.M) {
 	xenv.SetTestMode(true)
 
-	clusterName = "krateo"
+	clusterName = "krateo-rest-resources-test"
 	testenv = env.New()
 
 	testenv.Setup(

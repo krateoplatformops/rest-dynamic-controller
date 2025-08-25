@@ -72,6 +72,7 @@ func buildPath(baseUrl string, path string, parameters map[string]string, query 
 	}
 	return parsed
 }
+
 func getValidResponseCode(codes *orderedmap.Map[string, *v3.Response]) ([]int, error) {
 	var validCodes []int
 	for code := codes.First(); code != nil; code = code.Next() {
@@ -88,9 +89,9 @@ func getValidResponseCode(codes *orderedmap.Map[string, *v3.Response]) ([]int, e
 }
 
 type UnstructuredClientInterface interface {
-	ValidateRequest(httpMethod string, path string, parameters map[string]string, query map[string]string) error
+	ValidateRequest(httpMethod string, path string, parameters map[string]string, query map[string]string, headers map[string]string, cookies map[string]string) error
 	RequestedBody(httpMethod string, path string) (bodys stringset.StringSet, err error)
-	RequestedParams(httpMethod string, path string) (parameters stringset.StringSet, query stringset.StringSet, err error)
+	RequestedParams(httpMethod string, path string) (parameters, query, headers, cookies stringset.StringSet, err error)
 	FindBy(ctx context.Context, cli *http.Client, path string, conf *RequestConfiguration) (Response, error)
 	Call(ctx context.Context, cli *http.Client, path string, conf *RequestConfiguration) (Response, error)
 }
@@ -107,10 +108,13 @@ type UnstructuredClient struct {
 type RequestConfiguration struct {
 	Parameters map[string]string
 	Query      map[string]string
+	Headers    map[string]string
+	Cookies    map[string]string
 	Body       any
 	Method     string
 }
 
+// isInResource checks if the given value is present in the resource's spec or status fields.
 func (u *UnstructuredClient) isInResource(value string, fields ...string) (bool, error) {
 	if u.Resource == nil {
 		return false, fmt.Errorf("resource is nil")
@@ -154,7 +158,9 @@ func (u *UnstructuredClient) isInResource(value string, fields ...string) (bool,
 	return false, nil
 }
 
-func (u *UnstructuredClient) ValidateRequest(httpMethod string, path string, parameters map[string]string, query map[string]string) error {
+// ValidateRequest is a method that validates the request parameters, query, headers, and cookies against the OpenAPI document.
+// It checks if the required parameters are present and returns an error if any required parameter is missing.
+func (u *UnstructuredClient) ValidateRequest(httpMethod string, path string, parameters map[string]string, query map[string]string, headers map[string]string, cookies map[string]string) error {
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {
 		return fmt.Errorf("path not found: %s", path)
@@ -173,6 +179,16 @@ func (u *UnstructuredClient) ValidateRequest(httpMethod string, path string, par
 			if param.In == "query" {
 				if _, ok := query[param.Name]; !ok {
 					return fmt.Errorf("missing query parameter: %s", param.Name)
+				}
+			}
+			if param.In == "header" {
+				if _, ok := headers[param.Name]; !ok && !isAuthorizationHeader(param.Name) {
+					return fmt.Errorf("missing header: %s", param.Name)
+				}
+			}
+			if param.In == "cookie" {
+				if _, ok := cookies[param.Name]; !ok {
+					return fmt.Errorf("missing cookie: %s", param.Name)
 				}
 			}
 		}
@@ -252,26 +268,32 @@ func populateFromAllOf(schema *base.Schema) {
 }
 
 // RequestedParams is a method that returns the parameters and query parameters for a given HTTP method and path.
-func (u *UnstructuredClient) RequestedParams(httpMethod string, path string) (parameters stringset.StringSet, query stringset.StringSet, err error) {
+func (u *UnstructuredClient) RequestedParams(httpMethod string, path string) (parameters, query, headers, cookies stringset.StringSet, err error) {
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {
-		return nil, nil, fmt.Errorf("path not found: %s", path)
+		return nil, nil, nil, nil, fmt.Errorf("path not found: %s", path)
 	}
 	getDoc, ok := pathItem.GetOperations().Get(strings.ToLower(httpMethod))
 	if !ok {
-		return nil, nil, fmt.Errorf("operation not found: %s", httpMethod)
+		return nil, nil, nil, nil, fmt.Errorf("operation not found: %s", httpMethod)
 	}
 	parameters = stringset.NewStringSet()
 	query = stringset.NewStringSet()
+	headers = stringset.NewStringSet()
+	cookies = stringset.NewStringSet()
 	for _, param := range getDoc.Parameters {
 		if param.In == "path" {
 			parameters.Add(param.Name)
-		}
-		if param.In == "query" {
+		} else if param.In == "query" {
 			query.Add(param.Name)
+		} else if param.In == "header" {
+			headers.Add(param.Name)
+		} else if param.In == "cookie" {
+			cookies.Add(param.Name)
 		}
 	}
-	return parameters, query, nil
+	//fmt.Printf("RequestedParams: parameters=%v, query=%v, headers=%v, cookies=%v\n", parameters, query, headers, cookies)
+	return
 }
 
 // BuildClient is a function that builds partial client from a swagger file.
@@ -324,4 +346,9 @@ func BuildClient(ctx context.Context, kubeclient dynamic.Interface, swaggerPath 
 		Server:    doc.Model.Servers[0].URL,
 		DocScheme: doc,
 	}, nil
+}
+
+// isAuthorizationHeader checks if the given header is an authorization header or contains "authorization" (case-insensitive).
+func isAuthorizationHeader(header string) bool {
+	return strings.Contains(strings.ToLower(header), "authorization")
 }

@@ -10,6 +10,8 @@ spec:
   names:
     categories:
     - sample
+    - restresources
+    - rr
     kind: Sample
     listKind: SampleList
     plural: samples
@@ -44,33 +46,25 @@ spec:
             type: string
           spec:
             properties:
-              authenticationRefs:
-                description: AuthenticationRefs represent the reference to a CR containing
-                  the authentication information. One authentication method must be
-                  set.
+              configurationRef:
+                description: A reference to the Configuration CR that holds all the
+                  needed configuration for this resource.
                 properties:
-                  bearerAuthRef:
+                  name:
                     type: string
+                  namespace:
+                    description: Namespace of the referenced Configuration. If not
+                      provided, the same namespace will be used.
+                    type: string
+                required:
+                - name
                 type: object
-              id:
+              description:
                 type: string
               name:
                 type: string
-              description:
-                type: string
-              status:
-                type: string
-              metadata:
-                type: object
-                additionalProperties:
-                  type: string
-              createdAt:
-                type: string
-              updatedAt:
-                type: string
             required:
-            - authenticationRefs
-            - name
+            - configurationRef
             type: object
           status:
             properties:
@@ -125,9 +119,9 @@ spec:
                     description: Namespace of the object.
                     type: string
                 type: object
-              name:
-                type: string
               id:
+                type: string
+              name:
                 type: string
             type: object
         type: object
@@ -139,17 +133,19 @@ status:
   acceptedNames:
     categories:
     - sample
+    - restresources
+    - rr
     kind: Sample
     listKind: SampleList
     plural: samples
     singular: sample
   conditions:
-  - lastTransitionTime: "2025-04-22T10:54:33Z"
+  - lastTransitionTime: "2025-08-20T08:36:51Z"
     message: no conflicts found
     reason: NoConflicts
     status: "True"
     type: NamesAccepted
-  - lastTransitionTime: "2025-04-22T10:54:33Z"
+  - lastTransitionTime: "2025-08-20T08:36:51Z"
     message: the initial names have been accepted
     reason: InitialNamesAccepted
     status: "True"

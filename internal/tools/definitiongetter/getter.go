@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/text"
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 
@@ -37,30 +35,24 @@ type Resource struct {
 	Identifiers []string `json:"identifiers"`
 	// AdditionalStatusFields: the list of additional status fields to use
 	AdditionalStatusFields []string `json:"additionalStatusFields"`
+	// ConfigurationFields: the list of fields to use as configuration fields
+	ConfigurationFields []ConfigurationField `json:"configurationFields,omitempty"`
 	// VerbsDescription: the list of verbs to use on this resource
 	VerbsDescription []VerbsDescription `json:"verbsDescription"`
 }
 
-type GVK struct {
-	// Group: the group of the resource
-	// +optional
-	Group string `json:"group,omitempty"`
-	// Version: the version of the resource
-	// +optional
-	Version string `json:"version,omitempty"`
-	// Kind: the kind of the resource
-	// +optional
-	Kind string `json:"kind,omitempty"`
+type ConfigurationField struct {
+	FromOpenAPI        FromOpenAPI        `json:"fromOpenAPI"`
+	FromRestDefinition FromRestDefinition `json:"fromRestDefinition"`
 }
 
-type ReferenceInfo struct {
-	// Field: the field to use as reference - represents the id of the resource
-	// +optional
-	Field string `json:"field,omitempty"`
+type FromOpenAPI struct {
+	Name string `json:"name"`
+	In   string `json:"in"` // "query", "path", "header", "cookie"
+}
 
-	// GVK: the group, version, kind of the resource
-	// +optional
-	GroupVersionKind GVK `json:"groupVersionKind,omitempty"`
+type FromRestDefinition struct {
+	Action string `json:"action"`
 }
 
 type Info struct {
@@ -70,6 +62,10 @@ type Info struct {
 	// The resource to manage
 	Resource Resource `json:"resources,omitempty"`
 
+	// The spec of the configuration resource
+	ConfigurationSpec map[string]interface{}
+
+	// SetAuth function, when called, sets the authentication for the request.
 	SetAuth func(req *http.Request)
 }
 
@@ -100,6 +96,8 @@ type dynamicGetter struct {
 	pluralizer    pluralizer.PluralizerInterface
 }
 
+// Get retrieves the related RestDefinition for the given unstructured object.
+// The information is extracted from the RestDefinition and returned as an Info struct.
 func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 	gvr, err := g.pluralizer.GVKtoGVR(un.GroupVersionKind())
 	if err != nil {
@@ -107,13 +105,12 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 	}
 
 	gvrForDefinitions := schema.GroupVersionResource{
-		Group:    "swaggergen.krateo.io",
+		Group:    "ogen.krateo.io",
 		Version:  "v1alpha1",
 		Resource: "restdefinitions",
 	}
 
 	all, err := g.dynamicClient.Resource(gvrForDefinitions).
-		// Namespace(un.GetNamespace()).
 		List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("getting definitions for '%v' in namespace: %s - %w", gvr.String(), un.GetNamespace(), err)
@@ -125,7 +122,7 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 	for _, item := range all.Items {
 		res, ok, err := unstructured.NestedFieldNoCopy(item.Object, "spec", "resource")
 		if !ok {
-			return nil, fmt.Errorf("missing spec.resources in definition for '%v' in namespace: %s", gvr, un.GetNamespace())
+			return nil, fmt.Errorf("missing spec.resource in definition for '%v' in namespace: %s", gvr, un.GetNamespace())
 		}
 		if err != nil {
 			return nil, err
@@ -159,7 +156,6 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 		}
 
 		if group == gvr.Group {
-			gvk := un.GroupVersionKind()
 			// Convert the map to JSON
 			jsonData, err := json.Marshal(res)
 			if err != nil {
@@ -177,127 +173,152 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 				Resource: resource,
 			}
 
-			err = g.setAuth(un, info)
+			err = g.processConfigurationRef(un, info)
 			if err != nil {
 				return nil, err
 			}
 
-			if resource.Kind == gvk.Kind {
-				return info, nil
-			}
+			return info, nil
 		}
 	}
 	return nil, fmt.Errorf("no definitions found for '%v' in namespace: %s", gvr, un.GetNamespace())
 }
 
-func (g *dynamicGetter) setAuth(un *unstructured.Unstructured, info *Info) error {
-	gvr, err := g.pluralizer.GVKtoGVR(un.GroupVersionKind())
+// processConfigurationRef processes the configuration reference for the given unstructured object.
+// It retrieves the configuration spec and authentication methods from the Configuration CR.
+// It returns an error if the configuration reference is not valid or if the retrieval fails.
+func (g *dynamicGetter) processConfigurationRef(un *unstructured.Unstructured, info *Info) error {
+	configRef, ok, err := unstructured.NestedStringMap(un.Object, "spec", "configurationRef")
 	if err != nil {
-		return fmt.Errorf("getting GVR for '%v' in namespace: %s", un.GetKind(), un.GetNamespace())
-	}
-
-	var authRef string
-	var authType restclient.AuthType = restclient.AuthTypeBasic
-
-	authenticationRefsMap, ok, err := unstructured.NestedStringMap(un.Object, "spec", "authenticationRefs")
-	if err != nil {
-		return fmt.Errorf("getting spec.authenticationRefs for '%v' in namespace: %s", gvr, un.GetNamespace())
+		return fmt.Errorf("getting spec.configurationRef for '%v' in namespace: %s", un.GetKind(), un.GetNamespace())
 	}
 	if !ok {
-		return nil
+		return nil // No auth configured
 	}
 
-	for key := range authenticationRefsMap {
-		authRef, ok, err = unstructured.NestedString(un.Object, "spec", "authenticationRefs", key)
-		if err != nil {
-			return fmt.Errorf("getting spec.authenticationRefs.%s for '%v' in namespace: %s", key, gvr, un.GetNamespace())
-		}
-		if ok {
-			authType, err = restclient.ToType(strings.Split(key, "AuthRef")[0])
-			if err != nil {
-				return err
-			}
-			break
-		}
+	// default namespace used to search the Configuration CR is the same as the unstructured object
+	namespace := un.GetNamespace()
+	if val, ok := configRef["namespace"]; ok { // if the namespace is specified in the configRef field, use it to search the Configuration CR
+		namespace = val
 	}
 
-	gvkForAuthentication := schema.GroupVersionKind{
-		Group:   gvr.Group,
-		Version: "v1alpha1",
-		Kind:    fmt.Sprintf("%sAuth", text.ToGolangName(authType.String())),
-	}
+	gvk := un.GroupVersionKind()
+	gvk.Kind = fmt.Sprintf("%sConfiguration", gvk.Kind) // e.g., "WorkflowConfiguration"
 
-	gvrForAuthentication, err := g.pluralizer.GVKtoGVR(gvkForAuthentication)
+	gvr, err := g.pluralizer.GVKtoGVR(gvk)
 	if err != nil {
-		return fmt.Errorf("getting GVR for '%v' in namespace: %s", gvkForAuthentication.Kind, un.GetNamespace())
+		return err
 	}
 
-	auth, err := g.dynamicClient.Resource(gvrForAuthentication).
-		Namespace(un.GetNamespace()).
-		Get(context.Background(), authRef, metav1.GetOptions{})
+	config, err := g.dynamicClient.Resource(gvr).
+		Namespace(namespace).
+		Get(context.Background(), configRef["name"], metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("getting authentication for '%v' in namespace: %s - %w", gvr, un.GetNamespace(), err)
+		return err
 	}
 
-	return parseAuthentication(auth, authType, g.dynamicClient, info)
+	configSpec, ok, err := unstructured.NestedMap(config.Object, "spec", "configuration")
+	if err != nil {
+		return err
+	}
+	if ok {
+		//fmt.Printf("Found configuration spec for '%v' in namespace: %s\n", un.GetKind(), un.GetNamespace())
+		//fmt.Printf("Configuration spec: %v\n", configSpec)
+		info.ConfigurationSpec = configSpec
+	}
+
+	authMethods, ok, err := unstructured.NestedMap(config.Object, "spec", "authentication")
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil // No auth methods defined
+	}
+	//fmt.Printf("Found authentication methods for '%v' in namespace: %s\n", un.GetKind(), un.GetNamespace())
+	//fmt.Printf("Authentication methods: %v\n", authMethods)
+
+	return parseAuthentication(authMethods, g.dynamicClient, info)
 }
 
 // parseAuthentication parses the authentication object and returns the appropriate AuthMethod for the given AuthType.
 // It returns an error if the authentication object is not valid.
-func parseAuthentication(un *unstructured.Unstructured, authType restclient.AuthType, dyn dynamic.Interface, info *Info) error {
-	if authType == restclient.AuthTypeBasic {
-		username, ok, err := unstructured.NestedString(un.Object, "spec", "username")
+func parseAuthentication(authMethods map[string]interface{}, dyn dynamic.Interface, info *Info) error {
+	for authTypeStr, authMethod := range authMethods {
+		authType, err := restclient.ToType(authTypeStr)
 		if err != nil {
 			return err
 		}
+
+		authMethodMap, ok := authMethod.(map[string]interface{})
 		if !ok {
-			return fmt.Errorf("missing spec.username in definition for 'apiVersion: %v, kind: %v' in namespace: %s", un.GetAPIVersion(), un.GetKind(), un.GetNamespace())
-		}
-		passwordRef, ok, err := unstructured.NestedStringMap(un.Object, "spec", "passwordRef")
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("missing spec.passwordRef in definition for 'apiVersion: %v, kind: %v' in namespace: %s", un.GetAPIVersion(), un.GetKind(), un.GetNamespace())
+			return fmt.Errorf("invalid auth method format for type: %s", authTypeStr)
 		}
 
-		password, err := GetSecret(context.Background(), dyn, SecretKeySelector{
-			Name:      passwordRef["name"],
-			Namespace: passwordRef["namespace"],
-			Key:       passwordRef["key"],
-		})
-		if err != nil {
-			return fmt.Errorf("getting password for 'apiVersion: %v, kind: %v' in namespace: %s - %w", un.GetAPIVersion(), un.GetKind(), un.GetNamespace(), err)
-		}
+		switch authType {
+		case restclient.AuthTypeBasic:
+			usernameRef, ok, err := unstructured.NestedStringMap(authMethodMap, "usernameRef")
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return fmt.Errorf("missing usernameRef in basic auth")
+			}
 
-		info.SetAuth = func(req *http.Request) {
-			req.SetBasicAuth(username, password)
-		}
+			username, err := GetSecret(context.Background(), dyn, SecretKeySelector{
+				Name:      usernameRef["name"],
+				Namespace: usernameRef["namespace"],
+				Key:       usernameRef["key"],
+			})
+			if err != nil {
+				return err
+			}
 
-		return nil
-	} else if authType == restclient.AuthTypeBearer {
-		tokenRef, ok, err := unstructured.NestedStringMap(un.Object, "spec", "tokenRef")
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("missing spec.tokenRef in definition for 'apiVersion: %v, kind: %v' in namespace: %s", un.GetAPIVersion(), un.GetKind(), un.GetNamespace())
-		}
-		token, err := GetSecret(context.Background(), dyn, SecretKeySelector{
-			Name:      tokenRef["name"],
-			Namespace: tokenRef["namespace"],
-			Key:       tokenRef["key"],
-		})
-		if err != nil {
-			return fmt.Errorf("getting token for 'apiVersion: %v, kind: %v' in namespace: %s - %w", un.GetAPIVersion(), un.GetKind(), un.GetNamespace(), err)
-		}
+			passwordRef, ok, err := unstructured.NestedStringMap(authMethodMap, "passwordRef")
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return fmt.Errorf("missing passwordRef in basic auth")
+			}
 
-		info.SetAuth = func(req *http.Request) {
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+			password, err := GetSecret(context.Background(), dyn, SecretKeySelector{
+				Name:      passwordRef["name"],
+				Namespace: passwordRef["namespace"],
+				Key:       passwordRef["key"],
+			})
+			if err != nil {
+				return err
+			}
+
+			info.SetAuth = func(req *http.Request) {
+				req.SetBasicAuth(username, password)
+			}
+
+			return nil
+		case restclient.AuthTypeBearer:
+			tokenRef, ok, err := unstructured.NestedStringMap(authMethodMap, "tokenRef")
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return fmt.Errorf("missing tokenRef in bearer auth")
+			}
+			token, err := GetSecret(context.Background(), dyn, SecretKeySelector{
+				Name:      tokenRef["name"],
+				Namespace: tokenRef["namespace"],
+				Key:       tokenRef["key"],
+			})
+			if err != nil {
+				return err
+			}
+
+			info.SetAuth = func(req *http.Request) {
+				req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+			}
+			return nil
 		}
-		return nil
 	}
-	return fmt.Errorf("unknown auth type: %s", authType)
+	return fmt.Errorf("no supported auth method found")
 }
 
 type SecretKeySelector struct {

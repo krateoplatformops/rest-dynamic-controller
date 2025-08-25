@@ -33,13 +33,13 @@ var (
 func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter, pluralizer pluralizer.PluralizerInterface) controller.ExternalClient {
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
-		log.Debug("Creating dynamic client", "error", err)
+		log.Error(err, "Creating dynamic client.")
 		return nil
 	}
 
 	dis, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
-		log.Debug("Creating discovery client", "error", err)
+		log.Error(err, "Creating discovery client.")
 		return nil
 	}
 
@@ -76,11 +76,11 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	}
 	clientInfo, err := h.swaggerInfoGetter.Get(mg)
 	if err != nil {
-		log.Debug("Getting REST client info", "error", err)
+		log.Error(err, "Getting REST client info")
 		return controller.ExternalObservation{}, err
 	}
 	if clientInfo == nil {
-		log.Debug("Swagger info is nil")
+		log.Error(fmt.Errorf("swagger info is nil"), "Getting REST client info")
 		return controller.ExternalObservation{}, fmt.Errorf("swagger info is nil")
 	}
 	mg, err = tools.Update(ctx, mg, tools.UpdateOptions{
@@ -88,13 +88,13 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
-		log.Debug("Updating CR", "error", err)
+		log.Error(err, "Updating CR")
 		return controller.ExternalObservation{}, err
 	}
 
 	cli, err := restclient.BuildClient(ctx, h.dynamicClient, clientInfo.URL)
 	if err != nil {
-		log.Debug("Building REST client", "error", err)
+		log.Error(err, "Building REST client")
 		return controller.ExternalObservation{}, err
 	}
 
@@ -110,14 +110,14 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		// Getting the external resource by its identifier
 		apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Get)
 		if apiCall == nil || callInfo == nil {
-			log.Info("API action get not found", "action", apiaction.Update)
+			log.Error(fmt.Errorf("API action get not found"), "action", apiaction.Get)
 			return controller.ExternalObservation{}, fmt.Errorf("API action get not found for %s", apiaction.Get)
 		}
 		if err != nil {
-			log.Debug("Building API call", "error", err)
+			log.Error(err, "Building API call")
 			return controller.ExternalObservation{}, err
 		}
-		reqConfiguration := builder.BuildCallConfig(callInfo, mg)
+		reqConfiguration := builder.BuildCallConfig(callInfo, mg, clientInfo.ConfigurationSpec)
 		if reqConfiguration == nil {
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
@@ -139,7 +139,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			}, nil
 		}
 		if err != nil {
-			log.Debug("Performing REST call", "error", err)
+			log.Error(err, "Performing REST call")
 			return controller.ExternalObservation{}, err
 		}
 	} else {
@@ -155,7 +155,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			cond.Message = "Resource is assumed to be up-to-date. API call not found for FindBy."
 			err = unstructuredtools.SetConditions(mg, cond)
 			if err != nil {
-				log.Debug("Setting condition", "error", err)
+				log.Error(err, "Setting condition")
 				return controller.ExternalObservation{}, err
 			}
 
@@ -170,12 +170,12 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			}, err
 		}
 		if err != nil {
-			log.Debug("Building API call", "error", err)
+			log.Error(err, "Building API call")
 			return controller.ExternalObservation{}, err
 		}
-		reqConfiguration := builder.BuildCallConfig(callInfo, mg)
+		reqConfiguration := builder.BuildCallConfig(callInfo, mg, clientInfo.ConfigurationSpec)
 		if reqConfiguration == nil {
-			log.Debug("Building call configuration", "error", "error building call configuration")
+			log.Error(fmt.Errorf("error building call configuration"), "Building call configuration")
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
 		response, err = apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
@@ -195,7 +195,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			}, nil
 		}
 		if err != nil {
-			log.Debug("Performing REST call", "error", err)
+			log.Error(err, "Performing REST call")
 			return controller.ExternalObservation{}, err
 		}
 	}
@@ -206,7 +206,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		cond.Message = "Resource is assumed to be up-to-date. Returned body is nil."
 		err = unstructuredtools.SetConditions(mg, cond)
 		if err != nil {
-			log.Debug("Setting condition", "error", err)
+			log.Error(err, "Setting condition")
 			return controller.ExternalObservation{}, err
 		}
 		_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
@@ -214,7 +214,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			DynamicClient: h.dynamicClient,
 		})
 		if err != nil {
-			log.Debug("Updating status", "error", err)
+			log.Error(err, "Updating status")
 			return controller.ExternalObservation{}, err
 		}
 		log.Debug("Resource is assumed to be up-to-date. Returned body is nil.")
@@ -225,13 +225,13 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	}
 	b, ok := response.ResponseBody.(map[string]interface{})
 	if !ok {
-		log.Debug("Performing REST call", "error", "body is not an object")
+		log.Error(fmt.Errorf("body is not an object"), "Performing REST call")
 		return controller.ExternalObservation{}, fmt.Errorf("body is not an object")
 	}
 	if b != nil {
 		err = populateStatusFields(clientInfo, mg, b)
 		if err != nil {
-			log.Debug("Updating identifiers", "error", err)
+			log.Error(err, "Updating identifiers")
 			return controller.ExternalObservation{}, err
 		}
 
@@ -240,12 +240,12 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			DynamicClient: h.dynamicClient,
 		})
 		if err != nil {
-			log.Debug("Updating status", "error", err)
+			log.Error(err, "Updating status")
 			return controller.ExternalObservation{}, err
 		}
 		res, err := isCRUpdated(mg, b)
 		if err != nil {
-			log.Debug("Checking if CR is updated", "reason", res.String(), "error", err)
+			log.Error(err, "Checking if CR is updated")
 			return controller.ExternalObservation{}, err
 		}
 		if !res.IsEqual {
@@ -262,7 +262,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	log.Debug("Setting condition", "kind", mg.GetKind())
 	err = unstructuredtools.SetConditions(mg, condition.Available())
 	if err != nil {
-		log.Debug("Setting condition", "error", err)
+		log.Error(err, "Setting condition")
 		return controller.ExternalObservation{}, err
 	}
 	mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
@@ -270,7 +270,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
-		log.Debug("Updating status", "error", err)
+		log.Error(err, "Updating status")
 		return controller.ExternalObservation{}, err
 	}
 
@@ -295,13 +295,13 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	clientInfo, err := h.swaggerInfoGetter.Get(mg)
 	if err != nil {
-		log.Debug("Getting REST client info", "error", err)
+		log.Error(err, "Getting REST client info")
 		return err
 	}
 
 	cli, err := restclient.BuildClient(ctx, h.dynamicClient, clientInfo.URL)
 	if err != nil {
-		log.Debug("Building REST client", "error", err)
+		log.Error(err, "Building REST client")
 		return err
 	}
 	cli.Debug = meta.IsVerbose(mg)
@@ -309,17 +309,17 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Create)
 	if err != nil {
-		log.Debug("Building API call", "error", err)
+		log.Error(err, "Building API call")
 		return err
 	}
 	if apiCall == nil || callInfo == nil {
-		log.Info("API action create not found", "action", apiaction.Update)
+		log.Error(fmt.Errorf("API action create not found"), "action", apiaction.Create)
 		return nil
 	}
-	reqConfiguration := builder.BuildCallConfig(callInfo, mg)
+	reqConfiguration := builder.BuildCallConfig(callInfo, mg, clientInfo.ConfigurationSpec)
 	response, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
-		log.Debug("Performing REST call", "error", err)
+		log.Error(err, "Performing REST call")
 		return err
 	}
 
@@ -327,13 +327,13 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		body := response.ResponseBody
 		b, ok := body.(map[string]interface{})
 		if !ok {
-			log.Debug("Performing REST call", "error", "body is not an object")
+			log.Error(fmt.Errorf("body is not an object"), "Performing REST call")
 			return fmt.Errorf("body is not an object")
 		}
 
 		err = populateStatusFields(clientInfo, mg, b)
 		if err != nil {
-			log.Debug("Updating identifiers", "error", err)
+			log.Error(err, "Updating identifiers")
 			return err
 		}
 	}
@@ -343,13 +343,13 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("External resource is pending", "kind", mg.GetKind())
 		err = unstructuredtools.SetConditions(mg, customcondition.Pending())
 		if err != nil {
-			log.Debug("Setting condition", "error", err)
+			log.Error(err, "Setting condition")
 			return err
 		}
 	} else {
 		err = unstructuredtools.SetConditions(mg, condition.Creating())
 		if err != nil {
-			log.Debug("Setting condition", "error", err)
+			log.Error(err, "Setting condition")
 			return err
 		}
 	}
@@ -359,7 +359,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
-		log.Debug("Updating status", "error", err)
+		log.Error(err, "Updating status")
 		return err
 	}
 
@@ -380,13 +380,13 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 
 	clientInfo, err := h.swaggerInfoGetter.Get(mg)
 	if err != nil {
-		log.Debug("Getting REST client info", "error", err)
+		log.Error(err, "Getting REST client info")
 		return err
 	}
 
 	cli, err := restclient.BuildClient(ctx, h.dynamicClient, clientInfo.URL)
 	if err != nil {
-		log.Debug("Building REST client", "error", err)
+		log.Error(err, "Building REST client")
 		return err
 	}
 	cli.Debug = meta.IsVerbose(mg)
@@ -394,18 +394,18 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 
 	apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Update)
 	if err != nil {
-		log.Debug("Building API call", "error", err)
+		log.Error(err, "Building API call")
 		return err
 	}
 	if apiCall == nil || callInfo == nil {
-		log.Info("API action update not found", "action", apiaction.Update)
+		log.Error(fmt.Errorf("API action update not found"), "action", apiaction.Update)
 		return nil
 	}
 
-	reqConfiguration := builder.BuildCallConfig(callInfo, mg)
+	reqConfiguration := builder.BuildCallConfig(callInfo, mg, clientInfo.ConfigurationSpec)
 	response, err := apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
-		log.Debug("Performing REST call", "error", err)
+		log.Error(err, "Performing REST call")
 		return err
 	}
 
@@ -413,13 +413,13 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		body := response.ResponseBody
 		b, ok := body.(map[string]interface{})
 		if !ok {
-			log.Debug("Performing REST call", "error", "body is not an object")
+			log.Error(fmt.Errorf("body is not an object"), "Performing REST call")
 			return fmt.Errorf("body is not an object")
 		}
 
 		err = populateStatusFields(clientInfo, mg, b)
 		if err != nil {
-			log.Debug("Updating identifiers", "error", err)
+			log.Error(err, "Updating identifiers")
 			return err
 		}
 	}
@@ -430,7 +430,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
-		log.Debug("Updating status", "error", err)
+		log.Error(err, "Updating status")
 		return err
 	}
 
@@ -455,12 +455,19 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	clientInfo, err := h.swaggerInfoGetter.Get(mg)
 	if err != nil {
 		log.Debug("Getting REST client info", "error", err)
-		return err
+		log.Info("RestDefinition or Configuration not found, CR will be deleted but real external resource will not be deleted due to missing information")
+		// We can still delete the CR, but we cannot delete the external resource.
+		err = unstructuredtools.SetConditions(mg, condition.Deleting())
+		if err != nil {
+			log.Error(err, "Setting condition")
+			return err
+		}
+		return nil
 	}
 
 	cli, err := restclient.BuildClient(ctx, h.dynamicClient, clientInfo.URL)
 	if err != nil {
-		log.Debug("Building REST client", "error", err)
+		log.Error(err, "Building REST client")
 		return err
 	}
 	cli.Debug = meta.IsVerbose(mg)
@@ -472,31 +479,32 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("Remote resource is assumed to not exist, deleting CR")
 		err = unstructuredtools.SetConditions(mg, condition.Deleting())
 		if err != nil {
-			log.Debug("Setting condition", "error", err)
+			log.Warn("Setting condition", "error", err)
 		}
 		return nil
 	}
 	if err != nil {
-		log.Debug("Getting status", "error", err)
+		log.Error(err, "Getting status")
 		return err
 	}
 	apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Delete)
 	if err != nil {
-		log.Debug("Building API call", "error", err)
+		log.Error(err, "Building API call")
 		return err
 	}
 	if apiCall == nil || callInfo == nil {
-		log.Info("API action delete not found", "action", apiaction.Update)
+		log.Error(fmt.Errorf("API action delete not found"), "action", apiaction.Delete)
 		return nil
 	}
-	reqConfiguration := builder.BuildCallConfig(callInfo, mg)
+	reqConfiguration := builder.BuildCallConfig(callInfo, mg, clientInfo.ConfigurationSpec)
 	if reqConfiguration == nil {
+		log.Error(fmt.Errorf("error building call configuration"), "Building call configuration")
 		return fmt.Errorf("building call configuration")
 	}
 
 	_, err = apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 	if err != nil {
-		log.Debug("Performing REST call", "error", err)
+		log.Error(err, "Performing REST call")
 		return err
 	}
 
@@ -504,7 +512,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 
 	err = unstructuredtools.SetConditions(mg, condition.Deleting())
 	if err != nil {
-		log.Debug("Setting condition", "error", err)
+		log.Error(err, "Setting condition")
 		return err
 	}
 

@@ -17,8 +17,10 @@ import (
 )
 
 type RequestedParams struct {
-	Parameters text.StringSet
+	Parameters text.StringSet // Parameters are the path parameters
 	Query      text.StringSet
+	Headers    text.StringSet
+	Cookies    text.StringSet
 	Body       text.StringSet
 }
 
@@ -27,6 +29,7 @@ type CallInfo struct {
 	ReqParams        *RequestedParams
 	IdentifierFields []string
 	Method           string
+	Action           apiaction.APIAction
 }
 
 type APIFuncDef func(ctx context.Context, cli *http.Client, path string, conf *restclient.RequestConfiguration) (restclient.Response, error)
@@ -36,7 +39,7 @@ func APICallBuilder(cli restclient.UnstructuredClientInterface, info *getter.Inf
 	identifierFields := info.Resource.Identifiers
 	for _, descr := range info.Resource.VerbsDescription {
 		if strings.EqualFold(descr.Action, action.String()) {
-			params, query, err := cli.RequestedParams(descr.Method, descr.Path)
+			params, query, headers, cookies, err := cli.RequestedParams(descr.Method, descr.Path)
 			if err != nil {
 				return nil, nil, fmt.Errorf("retrieving requested params: %s", err)
 			}
@@ -54,9 +57,12 @@ func APICallBuilder(cli restclient.UnstructuredClientInterface, info *getter.Inf
 			callInfo := &CallInfo{
 				Path:   descr.Path,
 				Method: descr.Method,
+				Action: action,
 				ReqParams: &RequestedParams{
 					Parameters: params,
 					Query:      query,
+					Headers:    headers,
+					Cookies:    cookies,
 					Body:       body,
 				},
 				IdentifierFields: identifierFields,
@@ -75,10 +81,23 @@ func APICallBuilder(cli restclient.UnstructuredClientInterface, info *getter.Inf
 }
 
 // BuildCallConfig builds the request configuration based on the callInfo and the fields from the status and spec
-func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured) *restclient.RequestConfiguration {
+func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSpec map[string]interface{}) *restclient.RequestConfiguration {
 	if callInfo == nil || mg == nil {
 		return nil
 	}
+
+	reqConfiguration := &restclient.RequestConfiguration{}
+	reqConfiguration.Parameters = make(map[string]string)
+	reqConfiguration.Query = make(map[string]string)
+	reqConfiguration.Headers = make(map[string]string)
+	reqConfiguration.Cookies = make(map[string]string)
+	reqConfiguration.Method = callInfo.Method
+	mapBody := make(map[string]interface{})
+
+	// Apply fields from the Configuration CR first.
+	applyConfigSpec(reqConfiguration, configSpec, callInfo.Action.String())
+
+	// Apply values from the main resource's spec and status
 	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
 	if err != nil {
 		// If the status is not found, it means that the resource is not created yet
@@ -94,19 +113,42 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured) *restcli
 		specFields = make(map[string]interface{})
 	}
 
-	reqConfiguration := &restclient.RequestConfiguration{}
-	reqConfiguration.Parameters = make(map[string]string)
-	reqConfiguration.Query = make(map[string]string)
-	reqConfiguration.Method = callInfo.Method
-	mapBody := make(map[string]interface{})
-
 	processFields(callInfo, specFields, reqConfiguration, mapBody)
 	processFields(callInfo, statusFields, reqConfiguration, mapBody)
+
 	reqConfiguration.Body = mapBody
 	return reqConfiguration
 }
 
-// tries to build the GET API Call, with the given statusFields and specFields values, if it is able to validate the GET request, returns true
+// applyConfigSpec populates the request configuration from a configuration spec map.
+func applyConfigSpec(req *restclient.RequestConfiguration, configSpec map[string]interface{}, action string) {
+	if configSpec == nil {
+		return
+	}
+
+	//fmt.Printf("Applying config spec for action: %s\n", action)
+	//fmt.Printf("Config spec content: %v\n", configSpec)
+
+	// Helper to avoid repetition
+	process := func(key string, dest map[string]string) {
+		if actionConfig, found, err := unstructured.NestedMap(configSpec, key, action); err == nil && found && actionConfig != nil {
+			for k, v := range actionConfig {
+				// Convert any type to string
+				stringVal := fmt.Sprintf("%v", v)
+				dest[k] = stringVal
+				//fmt.Printf("%s param set from config spec: %s=%s\n", key, k, stringVal)
+			}
+		}
+	}
+
+	process("headers", req.Headers)
+	process("query", req.Query)
+	process("cookies", req.Cookies)
+	process("path", req.Parameters)
+}
+
+// IsResourceKnown tries to build the GET API Call, with the given statusFields and specFields values, if it is able to validate the GET request, returns true
+// This function is used during a 'findby' action
 func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *getter.Info, mg *unstructured.Unstructured) bool {
 	if mg == nil || clientInfo == nil {
 		return false
@@ -119,7 +161,7 @@ func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *get
 	if err != nil {
 		return false
 	}
-	reqConfiguration := BuildCallConfig(callInfo, mg)
+	reqConfiguration := BuildCallConfig(callInfo, mg, clientInfo.ConfigurationSpec)
 	if reqConfiguration == nil {
 		return false
 	}
@@ -131,7 +173,7 @@ func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *get
 		}
 	}
 
-	return cli.ValidateRequest(actionGetMethod, callInfo.Path, reqConfiguration.Parameters, reqConfiguration.Query) == nil
+	return cli.ValidateRequest(actionGetMethod, callInfo.Path, reqConfiguration.Parameters, reqConfiguration.Query, reqConfiguration.Headers, reqConfiguration.Cookies) == nil
 }
 
 func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfiguration *restclient.RequestConfiguration, mapBody map[string]interface{}) {
@@ -139,19 +181,29 @@ func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfigu
 		if field == "" {
 			continue
 		}
+
 		if callInfo.ReqParams.Parameters.Contains(field) {
 			stringVal := fmt.Sprintf("%v", value)
 			if stringVal == "" && reqConfiguration.Parameters[field] != "" {
 				continue
 			}
 			reqConfiguration.Parameters[field] = stringVal
-		} else if callInfo.ReqParams.Query.Contains(field) {
+			//fmt.Printf("Path param set: %s=%s\n", field, stringVal)
+		}
+
+		if callInfo.ReqParams.Query.Contains(field) {
 			stringVal := fmt.Sprintf("%v", value)
 			if stringVal == "" && reqConfiguration.Query[field] != "" {
 				continue
 			}
 			reqConfiguration.Query[field] = stringVal
-		} else if callInfo.ReqParams.Body.Contains(field) {
+			//fmt.Printf("Query param set: %s=%s\n", field, stringVal)
+
+		}
+		// Note: probably headers and cookies are better to be set ONLY in the Configuration CR spec
+		// Therefore, we do not set them here
+
+		if callInfo.ReqParams.Body.Contains(field) {
 			if mapBody[field] == nil {
 				mapBody[field] = value
 			}
