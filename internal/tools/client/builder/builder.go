@@ -126,11 +126,17 @@ func applyConfigSpec(req *restclient.RequestConfiguration, configSpec map[string
 		return
 	}
 
+	//fmt.Printf("Applying config spec for action: %s\n", action)
+	//fmt.Printf("Config spec content: %v\n", configSpec)
+
 	// Helper to avoid repetition
 	process := func(key string, dest map[string]string) {
-		if values, _, err := unstructured.NestedStringMap(configSpec, key, action); err == nil && values != nil {
-			for k, v := range values {
-				dest[k] = v
+		if actionConfig, found, err := unstructured.NestedMap(configSpec, key, action); err == nil && found && actionConfig != nil {
+			for k, v := range actionConfig {
+				// Convert any type to string
+				stringVal := fmt.Sprintf("%v", v)
+				dest[k] = stringVal
+				//fmt.Printf("%s param set from config spec: %s=%s\n", key, k, stringVal)
 			}
 		}
 	}
