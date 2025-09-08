@@ -14,19 +14,16 @@ import (
 	"github.com/krateoplatformops/plumbing/ptr"
 	prettylog "github.com/krateoplatformops/plumbing/slogs/pretty"
 	"github.com/krateoplatformops/snowplow/plumbing/env"
-	genctrl "github.com/krateoplatformops/unstructured-runtime"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/builder"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
-	metricsserver "github.com/krateoplatformops/unstructured-runtime/pkg/metrics/server"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/workqueue"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/metrics/server"
 
 	restResources "github.com/krateoplatformops/rest-dynamic-controller/internal/controllers"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/workqueue"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/discovery"
-	memory "k8s.io/client-go/discovery/cached"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -45,9 +42,9 @@ func main() {
 		"absolute path to the kubeconfig file")
 	debug := flag.Bool("debug",
 		env.Bool("REST_CONTROLLER_DEBUG", false), "dump verbose output")
-	workers := flag.Int("workers", env.Int("REST_CONTROLLER_WORKERS", 1), "number of workers")
+	workers := flag.Int("workers", env.Int("REST_CONTROLLER_WORKERS", 5), "number of workers")
 	resyncInterval := flag.Duration("resync-interval",
-		env.Duration("REST_CONTROLLER_RESYNC_INTERVAL", time.Minute*1), "resync interval")
+		env.Duration("REST_CONTROLLER_RESYNC_INTERVAL", time.Minute*3), "resync interval")
 	resourceGroup := flag.String("group",
 		env.String("REST_CONTROLLER_GROUP", ""), "resource api group")
 	resourceVersion := flag.String("version",
@@ -57,7 +54,7 @@ func main() {
 	namespace := flag.String("namespace",
 		env.String("REST_CONTROLLER_NAMESPACE", ""), "namespace to watch, empty for all namespaces")
 	maxErrorRetryInterval := flag.Duration("max-error-retry-interval",
-		env.Duration("REST_CONTROLLER_MAX_ERROR_RETRY_INTERVAL", 30*time.Second), "The maximum interval between retries when an error occurs. This should be less than the half of the resync interval.")
+		env.Duration("REST_CONTROLLER_MAX_ERROR_RETRY_INTERVAL", 90*time.Second), "The maximum interval between retries when an error occurs. This should be less than the half of the resync interval.")
 	minErrorRetryInterval := flag.Duration("min-error-retry-interval",
 		env.Duration("REST_CONTROLLER_MIN_ERROR_RETRY_INTERVAL", 1*time.Second), "The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval.")
 	metricsServerPort := flag.Int("metrics-server-port",
@@ -92,26 +89,12 @@ func main() {
 	if len(*kubeconfig) > 0 {
 		cfg, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
 	} else {
-		cfg, err = genctrl.GetConfig()
+		cfg, err = builder.GetConfig()
 	}
 	if err != nil {
 		log.Error(err, "Building kubeconfig.")
 		os.Exit(1)
 	}
-
-	dyn, err := dynamic.NewForConfig(cfg)
-	if err != nil {
-		log.Error(err, "Creating dynamic client.")
-		os.Exit(1)
-	}
-
-	discovery, err := discovery.NewDiscoveryClientForConfig(cfg)
-	if err != nil {
-		log.Error(err, "Creating discovery client.")
-		os.Exit(1)
-	}
-
-	cachedDisc := memory.NewMemCacheClient(discovery)
 
 	var handler controller.ExternalClient
 
@@ -121,15 +104,6 @@ func main() {
 	if err != nil {
 		log.Error(err, "Creating definition getter.")
 		os.Exit(1)
-	}
-
-	metricsServerBindAddress := ""
-	if ptr.Deref(metricsServerPort, 0) != 0 {
-		log.Info("Metrics server enabled", "bindAddress", fmt.Sprintf(":%d", *metricsServerPort))
-		metricsServerBindAddress = fmt.Sprintf(":%d", *metricsServerPort)
-	} else {
-		log.Info("Metrics server disabled")
-		metricsServerBindAddress = "0"
 	}
 
 	log.WithValues("build", Build).
@@ -159,27 +133,35 @@ func main() {
 	}...)
 	defer cancel()
 
-	controller := genctrl.New(ctx, genctrl.Options{
-		Discovery:      cachedDisc,
-		Client:         dyn,
-		ResyncInterval: *resyncInterval,
+	opts := []builder.FuncOption{
+		builder.WithLogger(log),
+		builder.WithMaxRetries(5),
+		builder.WithNamespace(*namespace),
+		builder.WithResyncInterval(*resyncInterval),
+		builder.WithGlobalRateLimiter(workqueue.NewExponentialTimedFailureRateLimiter[any](*minErrorRetryInterval, *maxErrorRetryInterval)),
+	}
+
+	metricsServerBindAddress := ""
+	if ptr.Deref(metricsServerPort, 0) != 0 {
+		log.Info("Metrics server enabled", "bindAddress", fmt.Sprintf(":%d", *metricsServerPort))
+		metricsServerBindAddress = fmt.Sprintf(":%d", *metricsServerPort)
+		opts = append(opts, builder.WithMetrics(server.Options{
+			BindAddress: metricsServerBindAddress,
+		}))
+	} else {
+		log.Info("Metrics server disabled")
+	}
+
+	controller, err := builder.Build(ctx, builder.Configuration{
+		Config: cfg,
 		GVR: schema.GroupVersionResource{
 			Group:    *resourceGroup,
 			Version:  *resourceVersion,
 			Resource: *resourceName,
 		},
-		Namespace:         *namespace,
-		Config:            cfg,
-		Debug:             *debug,
-		Logger:            log,
-		ProviderName:      serviceName,
-		ListWatcher:       controller.ListWatcherConfiguration{},
-		Pluralizer:        *pluralizer,
-		GlobalRateLimiter: workqueue.NewExponentialTimedFailureRateLimiter[any](*minErrorRetryInterval, *maxErrorRetryInterval),
-		Metrics: metricsserver.Options{
-			BindAddress: metricsServerBindAddress,
-		},
-	})
+		ProviderName: serviceName,
+	}, opts...)
+
 	controller.SetExternalClient(handler)
 
 	err = controller.Run(ctx, *workers)
