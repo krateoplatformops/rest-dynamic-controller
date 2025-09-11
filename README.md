@@ -189,4 +189,5 @@ The following environment variables can be configured in the rest-dynamic-contro
 | REST_CONTROLLER_NAMESPACE | Namespace to watch for CRs | `""` (all namespaces) |
 | REST_CONTROLLER_MAX_ERROR_RETRY_INTERVAL | The maximum interval between retries when an error occurs. This should be less than the half of the resync interval. | `30s` | 
 | REST_CONTROLLER_MIN_ERROR_RETRY_INTERVAL | The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval. | `1s` | 
+| REST_CONTROLLER_MAX_ERROR_RETRIES | How many times to retry the processing of a resource when an error occurs before giving up and dropping the resource. | `5` |
 | REST_CONTROLLER_METRICS_SERVER_PORT | The port where the metrics server will be listening. If not set, the metrics server is disabled. |  |
