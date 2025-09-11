@@ -137,7 +137,6 @@ func main() {
 
 	opts := []builder.FuncOption{
 		builder.WithLogger(log),
-		builder.WithMaxRetries(5),
 		builder.WithNamespace(*namespace),
 		builder.WithResyncInterval(*resyncInterval),
 		builder.WithGlobalRateLimiter(workqueue.NewExponentialTimedFailureRateLimiter[any](*minErrorRetryInterval, *maxErrorRetryInterval)),
