@@ -57,6 +57,8 @@ func main() {
 		env.Duration("REST_CONTROLLER_MAX_ERROR_RETRY_INTERVAL", 90*time.Second), "The maximum interval between retries when an error occurs. This should be less than the half of the resync interval.")
 	minErrorRetryInterval := flag.Duration("min-error-retry-interval",
 		env.Duration("REST_CONTROLLER_MIN_ERROR_RETRY_INTERVAL", 1*time.Second), "The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval.")
+	maxErrorRetry := flag.Int("max-error-retries",
+		env.Int("REST_CONTROLLER_MAX_ERROR_RETRIES", 5), "How many times to retry the processing of a resource when an error occurs before giving up and dropping the resource.")
 	metricsServerPort := flag.Int("metrics-server-port",
 		env.Int("REST_CONTROLLER_METRICS_SERVER_PORT", 0), "The address to bind the metrics server to. If empty, metrics server is disabled.")
 
@@ -139,6 +141,7 @@ func main() {
 		builder.WithNamespace(*namespace),
 		builder.WithResyncInterval(*resyncInterval),
 		builder.WithGlobalRateLimiter(workqueue.NewExponentialTimedFailureRateLimiter[any](*minErrorRetryInterval, *maxErrorRetryInterval)),
+		builder.WithMaxRetries(*maxErrorRetry),
 	}
 
 	metricsServerBindAddress := ""
