@@ -163,7 +163,10 @@ func main() {
 		},
 		ProviderName: serviceName,
 	}, opts...)
-
+	if err != nil {
+		log.Error(err, "Building controller.")
+		os.Exit(1)
+	}
 	controller.SetExternalClient(handler)
 
 	err = controller.Run(ctx, *workers)
