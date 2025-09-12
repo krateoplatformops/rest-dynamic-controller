@@ -117,6 +117,7 @@ func main() {
 		WithValues("namespace", *namespace).
 		WithValues("maxErrorRetryInterval", *maxErrorRetryInterval).
 		WithValues("minErrorRetryInterval", *minErrorRetryInterval).
+		WithValues("maxErrorRetry", *maxErrorRetry).
 		WithValues("workers", *workers).
 		Info("Starting.", "serviceName", serviceName)
 
