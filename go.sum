@@ -81,8 +81,8 @@ github.com/krateoplatformops/plumbing v0.6.1 h1:UxQjxvJwj6ORso/RJePQv7PRC75tCcup
 github.com/krateoplatformops/plumbing v0.6.1/go.mod h1:mQ/sm0viyKgfR2ARzHuwCpY0rcyMKqCv8a8SOu52yYQ=
 github.com/krateoplatformops/snowplow v0.0.0-20250311104630-6e215130151f h1:Kw7J+0uCHPlWmcXeSvstQJDqwMwJ5WgETkHj4Z+UEjI=
 github.com/krateoplatformops/snowplow v0.0.0-20250311104630-6e215130151f/go.mod h1:C9UtLN04vcF+Hj79scByTjmwWvIQvAc7i8Dk3N+f6PA=
-github.com/krateoplatformops/unstructured-runtime v0.2.3 h1:DBEpgTPWPxSHftSnsb9lw6OaAw68aUuDhXoEzeQHQdw=
-github.com/krateoplatformops/unstructured-runtime v0.2.3/go.mod h1:hY1WdGSugozFs5p/MTlQot3yM71Il6/B+UkZv43FL9E=
+github.com/krateoplatformops/unstructured-runtime v0.2.7 h1:HwvW/0vjLbNmLvYeh4d4EN43UQSMRS2iHacmadZbHs0=
+github.com/krateoplatformops/unstructured-runtime v0.2.7/go.mod h1:19uT87wZzRSjrfk3731Xhdt8ww7vnsXhljy4jk0cuWA=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/mailru/easyjson v0.7.7 h1:UGYAvKxe3sBsEDzO8ZeWOSlIQfWFlxbzLZe7hwFURr0=

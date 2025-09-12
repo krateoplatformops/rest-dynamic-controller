@@ -1,6 +1,6 @@
 # Build environment
 # -----------------
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.25-trixie AS builder
 LABEL stage=builder
 
 ARG DEBIAN_FRONTEND=noninteractive
