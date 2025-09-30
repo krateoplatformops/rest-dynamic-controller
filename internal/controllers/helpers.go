@@ -2,7 +2,9 @@ package restResources
 
 import (
 	"fmt"
+	"log"
 	"math"
+	"strings"
 
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/comparison"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
@@ -35,8 +37,9 @@ func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (comp
 	return comparison.CompareExisting(m, rm)
 }
 
-// populateStatusFields populates the status fields in the mg object with the values from the body
-// It checks both the `identifiers` and `additionalStatusFields` defined in the resource
+// populateStatusFields populates the status fields in the mg object with the values from the response body of the API call.
+// It supports dot notation for nested fields and performs necessary type conversions.
+// It uses the identifiers and additionalStatusFields from the clientInfo to determine which fields to populate.
 func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured, body map[string]interface{}) error {
 	// Handle nil inputs
 	if mg == nil {
@@ -49,34 +52,40 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 		return nil // Nothing to populate, but not an error
 	}
 
+	// Combine identifiers and additionalStatusFields into one list.
+	allFields := append(clientInfo.Resource.Identifiers, clientInfo.Resource.AdditionalStatusFields...)
 	// Early return if no fields to populate
-	if len(clientInfo.Resource.Identifiers) == 0 && len(clientInfo.Resource.AdditionalStatusFields) == 0 {
+	if len(allFields) == 0 {
 		return nil
 	}
 
-	// Create a set of all fields we need to look for
-	fieldsToPopulate := make(map[string]struct{})
+	for _, fieldName := range allFields {
+		log.Printf("Managing field: %s", fieldName)
+		// Split the field name by '.' to handle nested paths.
+		path := strings.Split(fieldName, ".")
+		log.Printf("Field path split: %v", path)
 
-	// Add identifiers to the set
-	for _, identifier := range clientInfo.Resource.Identifiers {
-		fieldsToPopulate[identifier] = struct{}{}
-	}
-
-	// Add additionalStatusFields to the set
-	for _, additionalField := range clientInfo.Resource.AdditionalStatusFields {
-		fieldsToPopulate[additionalField] = struct{}{}
-	}
-
-	// Single pass through the body map
-	for k, v := range body {
-		if _, exists := fieldsToPopulate[k]; exists {
-			// Convert the value to a format that unstructured can handle
-			convertedValue := deepCopyJSONValue(v)
-
-			if err := unstructured.SetNestedField(mg.Object, convertedValue, "status", k); err != nil {
-				return fmt.Errorf("setting nested field '%s' in status: %w", k, err)
-			}
+		// Extract the raw value from the response body without copying.
+		value, found, err := unstructured.NestedFieldNoCopy(body, path...)
+		if err != nil || !found {
+			// An error here means the path was invalid or not found.
+			// We can safely continue to the next field.
+			log.Printf("Field '%s' not found in response body or error occurred: %v", fieldName, err)
+			continue
 		}
+		log.Printf("Extracted value for field '%s': %v", fieldName, value)
+
+		// Perform deep copy and type conversions (e.g., float64/int to int64).
+		convertedValue := deepCopyJSONValue(value)
+		log.Printf("Converted value for field '%s': %v", fieldName, convertedValue)
+
+		// The destination path in the status should mirror the source path.
+		statusPath := append([]string{"status"}, path...)
+		log.Printf("Setting value for field '%s' at status path: %v", fieldName, statusPath)
+		if err := unstructured.SetNestedField(mg.Object, convertedValue, statusPath...); err != nil {
+			return fmt.Errorf("setting nested field '%s' in status: %w", fieldName, err)
+		}
+		log.Printf("Successfully set field '%s' with value: %v at path: %v", fieldName, convertedValue, statusPath)
 	}
 
 	return nil

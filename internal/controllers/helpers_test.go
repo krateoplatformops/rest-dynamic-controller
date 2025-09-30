@@ -531,6 +531,202 @@ func TestPopulateStatusFields(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "nested identifiers and additional status fields",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					Identifiers:            []string{"metadata.uid"},
+					AdditionalStatusFields: []string{"spec.host", "status.phase"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"metadata": map[string]interface{}{
+					"uid": "xyz-123",
+				},
+				"spec": map[string]interface{}{
+					"host": "example.com",
+				},
+				"status": map[string]interface{}{
+					"phase": "Running",
+				},
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"metadata": map[string]interface{}{
+						"uid": "xyz-123",
+					},
+					"spec": map[string]interface{}{
+						"host": "example.com",
+					},
+					"status": map[string]interface{}{
+						"phase": "Running",
+					},
+				},
+			},
+		},
+		{
+			name: "mixed top-level and nested fields",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					Identifiers:            []string{"id"},
+					AdditionalStatusFields: []string{"metadata.name"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"id": "abc-456",
+				"metadata": map[string]interface{}{
+					"name": "my-resource",
+				},
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"id": "abc-456",
+					"metadata": map[string]interface{}{
+						"name": "my-resource",
+					},
+				},
+			},
+		},
+		{
+			name: "nested field not found in body",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					AdditionalStatusFields: []string{"spec.nonexistent"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"spec": map[string]interface{}{
+					"host": "example.com",
+				},
+			},
+			wantErr:  false,
+			expected: map[string]interface{}{},
+		},
+		{
+			name: "complex nested object",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					AdditionalStatusFields: []string{"data.config.spec"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"data": map[string]interface{}{
+					"config": map[string]interface{}{
+						"spec": map[string]interface{}{
+							"key": "value",
+							"num": float64(123),
+						},
+					},
+				},
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"data": map[string]interface{}{
+						"config": map[string]interface{}{
+							"spec": map[string]interface{}{
+								"key": "value",
+								"num": int64(123),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "slice of strings",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					AdditionalStatusFields: []string{"spec.tags"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"spec": map[string]interface{}{
+					"tags": []interface{}{"tag1", "tag2"},
+				},
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"spec": map[string]interface{}{
+						"tags": []interface{}{"tag1", "tag2"},
+					},
+				},
+			},
+		},
+		{
+			name: "slice of objects with mixed numeric types",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					AdditionalStatusFields: []string{"spec.ports"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"spec": map[string]interface{}{
+					"ports": []interface{}{
+						map[string]interface{}{"name": "http", "port": 80},
+						map[string]interface{}{"name": "https", "port": float32(443)},
+					},
+				},
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"spec": map[string]interface{}{
+						"ports": []interface{}{
+							map[string]interface{}{"name": "http", "port": int64(80)},
+							map[string]interface{}{"name": "https", "port": int64(443)},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "object with nil value",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					AdditionalStatusFields: []string{"config"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"config": map[string]interface{}{
+					"settingA": "valueA",
+					"settingB": nil,
+				},
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"config": map[string]interface{}{
+						"settingA": "valueA",
+						"settingB": nil,
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -542,52 +738,8 @@ func TestPopulateStatusFields(t *testing.T) {
 			}
 
 			if !tt.wantErr {
-				// Validate the results
-				if len(tt.expected) == 0 {
-					// No status should be created or should be empty
-					status, exists, _ := unstructured.NestedMap(tt.mg.Object, "status")
-					if exists && len(status) > 0 {
-						// Check if there were pre-existing status fields ("existing" field in status)
-						hasPreExisting := false
-						for _, test := range tests {
-							if test.name == tt.name {
-								if statusObj, ok := test.mg.Object["status"]; ok {
-									if statusMap, ok := statusObj.(map[string]interface{}); ok && len(statusMap) > 0 {
-										hasPreExisting = true
-										break
-									}
-								}
-							}
-						}
-						if !hasPreExisting {
-							t.Errorf("populateStatusFields() unexpected status field created: %v while expected is empty", status)
-						}
-					}
-				} else {
-					// Validate expected status fields
-					status, exists, _ := unstructured.NestedMap(tt.mg.Object, "status")
-					if !exists {
-						t.Errorf("populateStatusFields() status field not created while length of expected is %d", len(tt.expected))
-						return
-					}
-
-					expectedStatus := tt.expected["status"].(map[string]interface{})
-
-					// Check that all expected fields are present with correct values
-					for k, expectedVal := range expectedStatus {
-						if actualVal, ok := status[k]; !ok {
-							t.Errorf("populateStatusFields() status.%s not found", k)
-						} else if actualVal != expectedVal {
-							t.Errorf("populateStatusFields() status.%s = %v, want %v", k, actualVal, expectedVal)
-						}
-					}
-
-					// For tests with existing status, ensure they're preserved
-					if tt.name == "existing status fields should be preserved" {
-						if status["existing"] != "existingValue" {
-							t.Errorf("populateStatusFields() existing status field not preserved")
-						}
-					}
+				if diff := cmp.Diff(tt.expected, tt.mg.Object); diff != "" {
+					t.Errorf("populateStatusFields() mismatch (-want +got):\n%s", diff)
 				}
 			}
 		})
