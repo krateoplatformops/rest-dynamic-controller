@@ -657,3 +657,370 @@ func (m *mockTransportImpl) RoundTrip(req *http.Request) (*http.Response, error)
 	// Return the recorded response
 	return rr.Result(), nil
 }
+
+func TestResponse_IsPending(t *testing.T) {
+	tests := []struct {
+		name     string
+		response *Response
+		want     bool
+	}{
+		{
+			name:     "should be true for StatusProcessing",
+			response: &Response{statusCode: http.StatusProcessing},
+			want:     true,
+		},
+		{
+			name:     "should be true for StatusContinue",
+			response: &Response{statusCode: http.StatusContinue},
+			want:     true,
+		},
+		{
+			name:     "should be true for StatusAccepted",
+			response: &Response{statusCode: http.StatusAccepted},
+			want:     true,
+		},
+		{
+			name:     "should be false for StatusOK",
+			response: &Response{statusCode: http.StatusOK},
+			want:     false,
+		},
+		{
+			name:     "should be false for StatusBadRequest",
+			response: &Response{statusCode: http.StatusBadRequest},
+			want:     false,
+		},
+		{
+			name:     "should be false for nil response",
+			response: nil,
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.response.IsPending(); got != tt.want {
+				t.Errorf("Response.IsPending() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractItemsFromResponse(t *testing.T) {
+	client := &UnstructuredClient{}
+	singleItem := map[string]interface{}{"id": 1}
+	tests := []struct {
+		name    string
+		body    interface{}
+		want    []interface{}
+		wantErr bool
+	}{
+		{
+			name: "standard list response",
+			body: []interface{}{singleItem, map[string]interface{}{"id": 2}},
+			want: []interface{}{singleItem, map[string]interface{}{"id": 2}},
+		},
+		{
+			name: "wrapped list response",
+			body: map[string]interface{}{"items": []interface{}{singleItem}, "count": 1},
+			want: []interface{}{singleItem},
+		},
+		{
+			name: "single object response",
+			body: singleItem,
+			want: []interface{}{singleItem},
+		},
+		{
+			name: "empty list response",
+			body: []interface{}{},
+			want: []interface{}{},
+		},
+		{
+			name: "empty object response",
+			body: map[string]interface{}{},
+			want: []interface{}{},
+		},
+		{
+			name:    "nil body",
+			body:    nil,
+			wantErr: true,
+		},
+		{
+			name:    "invalid body type",
+			body:    "a string",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := client.extractItemsFromResponse(tt.body)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("extractItemsFromResponse() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			assert.Equal(t, tt.want, got, "extractItemsFromResponse() got = %v, want %v", got, tt.want)
+		})
+	}
+}
+
+func TestFindItemInList(t *testing.T) {
+	item1 := map[string]interface{}{"name": "one", "value": 1}
+	item2 := map[string]interface{}{"name": "two", "value": 2}
+
+	tests := []struct {
+		name      string
+		items     []interface{}
+		client    *UnstructuredClient
+		wantItem  map[string]interface{}
+		wantFound bool
+	}{
+		{
+			name:  "match found",
+			items: []interface{}{item1, item2},
+			client: &UnstructuredClient{
+				IdentifierFields: []string{"name"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{"name": "two"},
+				}},
+			},
+			wantItem:  item2,
+			wantFound: true,
+		},
+		{
+			name:  "no match found",
+			items: []interface{}{item1, item2},
+			client: &UnstructuredClient{
+				IdentifierFields: []string{"name"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{"name": "three"},
+				}},
+			},
+			wantItem:  nil,
+			wantFound: false,
+		},
+		{
+			name:      "empty item list",
+			items:     []interface{}{},
+			client:    &UnstructuredClient{},
+			wantItem:  nil,
+			wantFound: false,
+		},
+		{
+			name:  "list with non-object items",
+			items: []interface{}{"a string", 123, nil, item2},
+			client: &UnstructuredClient{
+				IdentifierFields: []string{"name"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{"name": "two"},
+				}},
+			},
+			wantItem:  item2,
+			wantFound: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotItem, gotFound := tt.client.findItemInList(tt.items)
+			assert.Equal(t, tt.wantFound, gotFound)
+			assert.Equal(t, tt.wantItem, gotItem)
+		})
+	}
+}
+
+func TestIsItemMatch(t *testing.T) {
+	tests := []struct {
+		name      string
+		client    *UnstructuredClient
+		itemMap   map[string]interface{}
+		wantMatch bool
+		wantErr   bool
+	}{
+		// --- AND Policy Tests ---
+		{
+			name: "AND policy, all identifiers match",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "AND",
+				IdentifierFields:      []string{"name", "region"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{"name": "test-vm", "region": "us-east-1"},
+				}},
+			},
+			itemMap:   map[string]interface{}{"name": "test-vm", "region": "us-east-1"},
+			wantMatch: true,
+		},
+		{
+			name: "AND policy, one identifier does not match",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "AND",
+				IdentifierFields:      []string{"name", "region"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{"name": "test-vm", "region": "us-east-1"},
+				}},
+			},
+			itemMap:   map[string]interface{}{"name": "test-vm", "region": "us-west-2"},
+			wantMatch: false,
+		},
+		{
+			name: "AND policy, one identifier is missing from item",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "AND",
+				IdentifierFields:      []string{"name", "region"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{"name": "test-vm", "region": "us-east-1"},
+				}},
+			},
+			itemMap:   map[string]interface{}{"name": "test-vm"},
+			wantMatch: false,
+		},
+
+		// --- OR Policy Tests ---
+		{
+			name: "OR policy, first identifier matches",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "OR",
+				IdentifierFields:      []string{"name", "id"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{"name": "test-vm", "id": "vm-stale"},
+				}},
+			},
+			itemMap:   map[string]interface{}{"name": "test-vm", "id": "vm-123"},
+			wantMatch: true,
+		},
+		{
+			name: "OR policy, second identifier matches",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "OR",
+				IdentifierFields:      []string{"name", "id"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{"name": "stale-name", "id": "vm-123"},
+				}},
+			},
+			itemMap:   map[string]interface{}{"name": "test-vm", "id": "vm-123"},
+			wantMatch: true,
+		},
+		{
+			name: "OR policy, no identifiers match",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "OR",
+				IdentifierFields:      []string{"name", "id"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{"name": "stale-name", "id": "vm-stale"},
+				}},
+			},
+			itemMap:   map[string]interface{}{"name": "test-vm", "id": "vm-123"},
+			wantMatch: false,
+		},
+
+		// --- Edge Cases ---
+		{
+			name: "No identifiers specified",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "AND",
+				IdentifierFields:      []string{},
+				Resource:              &unstructured.Unstructured{Object: map[string]interface{}{}},
+			},
+			itemMap:   map[string]interface{}{"name": "test-vm"},
+			wantMatch: false,
+		},
+		{
+			name: "Default policy (empty) is OR, match succeeds on partial match",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "", // Default should be OR
+				IdentifierFields:      []string{"name", "region"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{"name": "test-vm", "region": "us-east-1"},
+				}},
+			},
+			itemMap:   map[string]interface{}{"name": "test-vm", "region": "us-west-2"}, // name matches, region doesn't
+			wantMatch: true,                                                             // Should be true with OR logic
+		},
+		{
+			name: "AND policy explicitly set, match fails on partial match",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "And",
+				IdentifierFields:      []string{"name", "region"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{"name": "test-vm", "region": "us-east-1"},
+				}},
+			},
+			itemMap:   map[string]interface{}{"name": "test-vm", "region": "us-west-2"},
+			wantMatch: false, // Should be false with AND logic
+		},
+
+		// --- Complex Identifier Tests ---
+		{
+			name: "AND policy, nested object identifier matches",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "AND",
+				IdentifierFields:      []string{"metadata.labels"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{"metadata": map[string]interface{}{
+						"labels": map[string]string{"app": "database", "tier": "backend"},
+					}},
+				}},
+			},
+			itemMap: map[string]interface{}{"metadata": map[string]interface{}{
+				"labels": map[string]string{"tier": "backend", "app": "database"}, // Key order is different
+			}},
+			wantMatch: true, // DeepEqual should handle map key order
+		},
+		{
+			name: "AND policy, nested object identifier fails",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "AND",
+				IdentifierFields:      []string{"metadata.labels"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{"metadata": map[string]interface{}{
+						"labels": map[string]string{"app": "database", "tier": "backend"},
+					}},
+				}},
+			},
+			itemMap: map[string]interface{}{"metadata": map[string]interface{}{
+				"labels": map[string]string{"app": "database", "tier": "frontend"}, // One value is different
+			}},
+			wantMatch: false,
+		},
+		{
+			name: "OR policy, array identifier matches",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "OR",
+				IdentifierFields:      []string{"ports", "name"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"name":  "stale-name",
+						"ports": []interface{}{80, 443},
+					},
+				}},
+			},
+			itemMap:   map[string]interface{}{"name": "test-svc", "ports": []interface{}{80, 443}},
+			wantMatch: true,
+		},
+		{
+			name: "OR policy, array identifier fails (order matters)",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "OR",
+				IdentifierFields:      []string{"ports"}, // Only test the array
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"name":  "test-svc",
+						"ports": []interface{}{80, 443},
+					},
+				}},
+			},
+			itemMap:   map[string]interface{}{"name": "test-svc", "ports": []interface{}{443, 80}}, // Order is different
+			wantMatch: false,                                                                       // DeepEqual for slices is order-sensitive
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotMatch, err := tt.client.isItemMatch(tt.itemMap)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("isItemMatch() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			assert.Equal(t, tt.wantMatch, gotMatch)
+		})
+	}
+}
