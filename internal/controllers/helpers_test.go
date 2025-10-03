@@ -727,6 +727,36 @@ func TestPopulateStatusFields(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "slice of objects with mixed numeric types",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					AdditionalStatusFields: []string{"spec.ports"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"spec": map[string]interface{}{
+					"ports": []interface{}{
+						map[string]interface{}{"name": "http", "port": 80},
+						map[string]interface{}{"name": "https", "port": float32(443)},
+					},
+				},
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"spec": map[string]interface{}{
+						"ports": []interface{}{
+							map[string]interface{}{"name": "http", "port": int64(80)},
+							map[string]interface{}{"name": "https", "port": int64(443)},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
