@@ -159,8 +159,11 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 	}, nil
 }
 
-// It support both list and single item responses
+// FindBy locates a specific resource within an API response it retrieves.
+// It serves as the primary orchestrator for the find operation,
+// delegating response parsing and item matching to helper functions.
 func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (Response, error) {
+	// Execute the initial API call.
 	response, err := u.Call(ctx, cli, path, opts)
 	if err != nil {
 		return Response{}, err
@@ -172,59 +175,163 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 		}
 	}
 
-	list := response.ResponseBody
-
-	var li map[string]interface{}
-	if _, ok := list.([]interface{}); ok {
-		li = map[string]interface{}{
-			"items": list,
-		}
-	} else {
-		li, ok = list.(map[string]interface{})
-		if !ok {
-			return Response{}, fmt.Errorf("unexpected response type: %T", list)
-		}
+	// Normalize the API response to get a consistent list of items to search.
+	// This handles multiple response shapes (e.g., raw list, wrapped list, single object).
+	// Shapes handled:
+	// 1. A standard JSON array: `[{"id": 1}, {"id": 2}]`
+	// 2. An object wrapping the array: `{"items": [{"id": 1}, {"id": 2}], "count": 2}` Note: we take the first array we find in the object as we don't know the property name in advance.
+	// 3. A single object, for endpoints that don't use an array for single-item results: `{"id": 1}` (e.g. when the collection only has one item at the moment)
+	itemList, err := u.extractItemsFromResponse(response.ResponseBody)
+	if err != nil {
+		return Response{}, err
 	}
 
-	for _, v := range li {
-		if vli, ok := v.([]interface{}); ok {
-			if len(vli) > 0 {
-				for _, item := range vli {
-					itMap, ok := item.(map[string]interface{})
-					if !ok {
-						continue // skip this item if it's not a map
-					}
-
-					for _, ide := range u.IdentifierFields {
-						idepath := strings.Split(ide, ".") // split the identifier field by '.'
-						responseValue, _, err := unstructured.NestedString(itMap, idepath...)
-						if err != nil {
-							val, _, err := unstructured.NestedFieldNoCopy(itMap, idepath...)
-							if err != nil {
-								return Response{}, fmt.Errorf("getting nested field: %w", err)
-							}
-							responseValue = fmt.Sprintf("%v", val)
-						}
-						ok, err = u.isInResource(responseValue, idepath...)
-						if err != nil {
-							return Response{}, err
-						}
-						if ok {
-							return Response{
-								ResponseBody: itMap,
-								statusCode:   response.statusCode,
-							}, nil
-						}
-					}
-
-				}
-			}
-			break
-		}
+	// Delegate the search logic to a dedicated helper function.
+	if matchedItem, found := u.findItemInList(itemList); found {
+		return Response{
+			ResponseBody: matchedItem,
+			statusCode:   response.statusCode,
+		}, nil
 	}
+
+	// If no match is found after checking all items, return a Not Found error.
 	return Response{}, &StatusError{
 		StatusCode: http.StatusNotFound,
 		Inner:      fmt.Errorf("item not found"),
+	}
+}
+
+// extractItemsFromResponse parses the body of an API response and extracts a list of items.
+// It is designed to handle three common API response patterns for list operations:
+// 1. A standard JSON array: `[{"id": 1}, {"id": 2}]`
+// 2. An object wrapping the array: `{"items": [{"id": 1}, {"id": 2}]}`
+// 3. A single object, for endpoints that don't use an array for single-item results: `{"id": 1}`
+func (u *UnstructuredClient) extractItemsFromResponse(body interface{}) ([]interface{}, error) {
+	// Case 1: The body is already a standard list (JSON array).
+	if list, ok := body.([]interface{}); ok {
+		return list, nil
+	}
+
+	// Case 2 and 3: The body is an object (map).
+	if body == nil {
+		return nil, fmt.Errorf("response body is nil")
+	}
+	if bodyMap, ok := body.(map[string]interface{}); ok {
+		if len(bodyMap) == 0 {
+			return []interface{}{}, nil
+		}
+
+		// Case 2: The body is an object, which may contain a list.
+		// Iterate through its values to find the first one that is a list.
+		for _, v := range bodyMap {
+			if list, ok := v.([]interface{}); ok {
+				return list, nil
+			}
+		}
+
+		// Case 3: If no list was found inside the object, assume the object
+		// itself is the single item we are looking for e.g. `{"id": 1}`.
+		// Wrap it in a slice to create a list of one.
+		return []interface{}{bodyMap}, nil
+	}
+
+	// If the body is not a list or an object, it's an unexpected type.
+	return nil, fmt.Errorf("unexpected response type: %T", body)
+}
+
+// findItemInList iterates through a slice of items and checks if any of them
+// match the identifiers of the local resource.
+func (u *UnstructuredClient) findItemInList(items []interface{}) (map[string]interface{}, bool) {
+	if len(items) == 0 {
+		return nil, false
+	}
+
+	for _, item := range items {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			// Skip any elements in the list that are not JSON objects.
+			continue
+		}
+
+		// Delegate the matching logic for a single item to a dedicated helper.
+		isMatch, err := u.isItemMatch(itemMap)
+		if err != nil {
+			// If an error occurs during comparison, we cannot consider it a match.
+			// For now, we log the error and continue searching.
+			// log.Printf("error matching item: %v", err) // Optional: for debugging
+			continue
+		}
+
+		if isMatch {
+			// If a match is found, return the item immediately.
+			return itemMap, true
+		}
+	}
+
+	// Return false if no match was found in the entire list.
+	return nil, false
+}
+
+// isItemMatch checks if a single item (from an API response) matches the local resource
+// by comparing all configured identifier fields.
+func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, error) {
+	// Normalize the policy string to lowercase
+	policy := strings.ToLower(u.IdentifierMatchPolicy)
+
+	// If no identifiers are specified, no match is possible.
+	if len(u.IdentifierFields) == 0 {
+		return false, nil
+	}
+
+	if policy == "or" {
+		// OR Logic: Return true on the first successful identifier match.
+		for _, ide := range u.IdentifierFields {
+			idepath := strings.Split(ide, ".")
+
+			val, found, err := unstructured.NestedFieldNoCopy(itemMap, idepath...)
+			if err != nil || !found {
+				// If field is not found or there is an error, it's not a match for this identifier, so we continue.
+				continue
+			}
+
+			ok, err := u.isInResource(val, idepath...)
+			if err != nil {
+				// A hard error during comparison should be propagated up.
+				return false, err
+			}
+
+			if ok {
+				// On the first match, we can return true.
+				return true, nil
+			}
+		}
+
+		// If the loop completes, no identifiers matched.
+		return false, nil
+	} else {
+		// AND Logic (default): Return false on the first failed match.
+		for _, ide := range u.IdentifierFields {
+			idepath := strings.Split(ide, ".")
+
+			val, found, err := unstructured.NestedFieldNoCopy(itemMap, idepath...)
+			if err != nil || !found {
+				// If any identifier is missing, it's not an AND match.
+				return false, nil
+			}
+
+			ok, err := u.isInResource(val, idepath...)
+			if err != nil {
+				// A hard error during comparison should be propagated up.
+				return false, err
+			}
+			if !ok {
+				// If any identifier does not match, it's not an AND match.
+				return false, nil
+			}
+		}
+
+		// If the loop completes, it means all identifiers matched.
+		return true, nil
 	}
 }
 

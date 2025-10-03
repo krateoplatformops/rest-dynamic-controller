@@ -559,7 +559,7 @@ func TestFindBy(t *testing.T) {
 				Method: "GET",
 			},
 			identifierFields: []string{"id"},
-			mg:               map[string]interface{}{"spec": map[string]interface{}{"id": "456"}}, // Will be converted to string for comparison
+			mg:               map[string]interface{}{"spec": map[string]interface{}{"id": 456}},
 			expected:         map[string]interface{}{"id": 456, "name": "item2"},
 		},
 	}

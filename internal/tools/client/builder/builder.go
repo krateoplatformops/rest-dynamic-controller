@@ -103,14 +103,14 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSp
 		// If the status is not found, it means that the resource is not created yet
 		// The error is not returned here, as it is not critical for the validation
 		// log.Debug("Status not found")
-		statusFields = make(map[string]interface{})
+		statusFields = make(map[string]interface{}) // Initialize as empty map
 	}
 	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 	if err != nil {
 		// If the spec is not found, it means that the resource is not created yet
 		// The error is not returned here, as it is not critical for the validation
 		// log.Debug("Spec not found")
-		specFields = make(map[string]interface{})
+		specFields = make(map[string]interface{}) // Initialize as empty map
 	}
 
 	processFields(callInfo, specFields, reqConfiguration, mapBody)
@@ -120,7 +120,7 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSp
 	return reqConfiguration
 }
 
-// applyConfigSpec populates the request configuration from a configuration spec map.
+// applyConfigSpec populates the request configuration from a configuration spec map (coming from the Configuration CR)
 func applyConfigSpec(req *restclient.RequestConfiguration, configSpec map[string]interface{}, action string) {
 	if configSpec == nil {
 		return
@@ -147,8 +147,11 @@ func applyConfigSpec(req *restclient.RequestConfiguration, configSpec map[string
 	process("path", req.Parameters)
 }
 
-// IsResourceKnown tries to build the GET API Call, with the given statusFields and specFields values, if it is able to validate the GET request, returns true
-// This function is used during a 'findby' action
+// IsResourceKnown tries to build the GET API Call, with the given statusFields and specFields values
+// If it is able to validate the GET request, returns true
+// This function is used during the reconciliation to decide:
+// - if the resource can be retrieved by its identifier (e.g GET /resource/{id})
+// - or if it needs to be found by its fields in a list of resources (e.g GET /resources)
 func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *getter.Info, mg *unstructured.Unstructured) bool {
 	if mg == nil || clientInfo == nil {
 		return false
@@ -168,7 +171,7 @@ func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *get
 
 	actionGetMethod := "GET"
 	for _, descr := range clientInfo.Resource.VerbsDescription {
-		if strings.EqualFold(descr.Action, apiaction.Get.String()) {
+		if strings.EqualFold(descr.Action, apiaction.Get.String()) { // Needed if the action `get` in RestDefinition is not mapped to GET method
 			actionGetMethod = descr.Method
 		}
 	}

@@ -225,3 +225,30 @@ func compareAny(a any, b any) bool {
 
 	return cmp.Equal(a, b)
 }
+
+// DeepEqual performs a deep comparison between two values.
+// It is suitable for comparing also complex structures like maps and slices.
+// For maps (objects), key order does not matter.
+// For slices (arrays), element order and content are strictly compared.
+func DeepEqual(a, b interface{}) bool {
+	// PROBABLY NOT NEEDED
+	// For complex types, a direct recursive comparison is correct and respects
+	// the nuances of map and slice comparison.
+	//aKind := reflect.TypeOf(a).Kind()
+	//bKind := reflect.TypeOf(b).Kind()
+	//if aKind == reflect.Map || aKind == reflect.Slice || bKind == reflect.Map || bKind == reflect.Slice {
+	//	return cmp.Equal(a, b)
+	//}
+	//
+	//// For primary types (string, bool, numbers), we use a normalization
+	//// step to handle type discrepancies, such as int64 from a CRD vs.
+	//// float64 from a JSON response.
+	//strA := fmt.Sprintf("%v", a)
+	//strB := fmt.Sprintf("%v", b)
+	//
+	//normA := jqutil.InferType(strA)
+	//normB := jqutil.InferType(strB)
+
+	//return cmp.Equal(normA, normB)
+	return cmp.Equal(a, b)
+}

@@ -75,7 +75,7 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 		}
 		log.Printf("Extracted value for field '%s': %v", fieldName, value)
 
-		// Perform deep copy and type conversions (e.g., float64/int to int64).
+		// Perform deep copy and type conversions (e.g., float64 to int64).
 		convertedValue := deepCopyJSONValue(value)
 		log.Printf("Converted value for field '%s': %v", fieldName, convertedValue)
 

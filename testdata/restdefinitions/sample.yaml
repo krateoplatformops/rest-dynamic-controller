@@ -8,8 +8,9 @@ spec:
   resourceGroup: sample.krateo.io
   resource:
     identifiers:
-    - id
     - name
+    additionalStatusFields:
+    - id
     kind: Sample
     verbsDescription:
     - action: create

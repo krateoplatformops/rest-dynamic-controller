@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 
 	customcondition "github.com/krateoplatformops/rest-dynamic-controller/internal/controllers/condition"
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
@@ -101,13 +102,14 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	cli.Debug = meta.IsVerbose(mg)
 	cli.SetAuth = clientInfo.SetAuth
 	cli.IdentifierFields = clientInfo.Resource.Identifiers
+	cli.IdentifierMatchPolicy = os.Getenv("REST_CONTROLLER_IDENTIFIER_MATCH_POLICY") // If not set, it will default to "AND"
 	cli.Resource = mg
 
 	var response restclient.Response
 	// Tries to tries to build the GET API Call, with the given statusFields and specFields values, if it is able to validate the GET request, returns true
 	isKnown := builder.IsResourceKnown(cli, clientInfo, mg)
 	if isKnown {
-		// Getting the external resource by its identifier
+		// Getting the external resource by its identifier (e.g GET /resource/{id}).
 		apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Get)
 		if apiCall == nil || callInfo == nil {
 			log.Error(fmt.Errorf("API action get not found"), "action", apiaction.Get)
@@ -143,6 +145,8 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			return controller.ExternalObservation{}, err
 		}
 	} else {
+		// Resource is not known, we try to find it by its fields in the items returned by a "list" API call (e.g GET /resources).
+		// Typically used when the resource does not have an identifier yet, e.g: before creation (first reconcile loop).
 		apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.FindBy)
 		if apiCall == nil {
 			if !unstructuredtools.IsConditionSet(mg, condition.Creating()) && !unstructuredtools.IsConditionSet(mg, condition.Available()) {
@@ -231,7 +235,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	if b != nil {
 		err = populateStatusFields(clientInfo, mg, b)
 		if err != nil {
-			log.Error(err, "Updating identifiers")
+			log.Error(err, "Updating status fields (identifiers and additionalStatusFields)")
 			return controller.ExternalObservation{}, err
 		}
 

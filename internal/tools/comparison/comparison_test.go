@@ -665,3 +665,55 @@ func TestCompareExisting_SliceTypeAssertionFailure(t *testing.T) {
 		t.Error("expected IsEqual=false for type assertion failure")
 	}
 }
+
+func TestDeepEqual(t *testing.T) {
+	tests := []struct {
+		name string
+		a    interface{}
+		b    interface{}
+		want bool
+	}{
+		// Primary Types & Normalization
+		{name: "equal integers", a: 42, b: 42, want: true},
+		{name: "different integers", a: 42, b: 43, want: false},
+		{name: "equal floats", a: 3.14, b: 3.14, want: true},
+		{name: "equal strings", a: "hello", b: "hello", want: true},
+		{name: "different strings", a: "hello", b: "world", want: false},
+		{name: "equal booleans", a: true, b: true, want: true},
+		{name: "nil vs nil", a: nil, b: nil, want: true},
+		{name: "nil vs non-nil", a: nil, b: 42, want: false},
+		// For the following we need to decide on the desired behavior
+		//{name: "int vs float64 (equal)", a: 42, b: 42.0, want: true},
+		//{name: "int64 vs float64 (equal)", a: int64(42), b: 42.0, want: true},
+		//{name: "int vs float32 (equal)", a: 42, b: float32(42.0), want: true},
+		{name: "int vs float (unequal)", a: 42, b: 42.1, want: false},
+
+		// Slices (will use direct cmp.Equal)
+		{name: "equal int slices", a: []int{1, 2, 3}, b: []int{1, 2, 3}, want: true},
+		{name: "unequal int slices (content)", a: []int{1, 2, 3}, b: []int{1, 2, 4}, want: false},
+		{name: "unequal int slices (order)", a: []int{1, 2, 3}, b: []int{3, 2, 1}, want: false},
+		{name: "equal interface slices", a: []interface{}{1, "a"}, b: []interface{}{1, "a"}, want: true},
+		// This case is expected to FAIL with the current DeepEqual implementation, demonstrating its limitation.
+		{name: "int vs float in slices", a: []interface{}{1, "a"}, b: []interface{}{1.0, "a"}, want: false},
+
+		// Maps (will use direct cmp.Equal)
+		{name: "equal maps", a: map[string]int{"a": 1}, b: map[string]int{"a": 1}, want: true},
+		{name: "equal maps (different key order)", a: map[string]int{"a": 1, "b": 2}, b: map[string]int{"b": 2, "a": 1}, want: true},
+		{name: "unequal maps (value)", a: map[string]int{"a": 1}, b: map[string]int{"a": 2}, want: false},
+		{name: "unequal maps (key)", a: map[string]int{"a": 1}, b: map[string]int{"c": 1}, want: false},
+		// This case is expected to FAIL with the current DeepEqual implementation, demonstrating its limitation.
+		{name: "int vs float in maps", a: map[string]interface{}{"a": 1}, b: map[string]interface{}{"a": 1.0}, want: false},
+
+		// Nested Structures (will use direct cmp.Equal)
+		{name: "equal nested maps", a: map[string]interface{}{"data": map[string]int{"a": 1}}, b: map[string]interface{}{"data": map[string]int{"a": 1}}, want: true},
+		{name: "equal map with slice", a: map[string]interface{}{"data": []int{1, 2}}, b: map[string]interface{}{"data": []int{1, 2}}, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DeepEqual(tt.a, tt.b); got != tt.want {
+				t.Errorf("DeepEqual() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
