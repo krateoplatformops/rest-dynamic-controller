@@ -283,8 +283,33 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 		return false, nil
 	}
 
-	if policy == "or" {
-		// OR Logic: Return true on the first successful identifier match.
+	if policy == "and" {
+		// AND Logic: Return false on the first failed match.
+		for _, ide := range u.IdentifierFields {
+			idepath := strings.Split(ide, ".")
+
+			val, found, err := unstructured.NestedFieldNoCopy(itemMap, idepath...)
+			if err != nil || !found {
+				// If any identifier is missing, it's not an AND match.
+				return false, nil
+			}
+
+			ok, err := u.isInResource(val, idepath...)
+			if err != nil {
+				// A hard error during comparison should be propagated up.
+				return false, err
+			}
+			if !ok {
+				// If any identifier does not match, it's not an AND match.
+				return false, nil
+			}
+		}
+
+		// If the loop completes, it means all identifiers matched.
+		return true, nil
+
+	} else {
+		// OR Logic (default): Return true on the first successful identifier match.
 		for _, ide := range u.IdentifierFields {
 			idepath := strings.Split(ide, ".")
 
@@ -308,30 +333,6 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 
 		// If the loop completes, no identifiers matched.
 		return false, nil
-	} else {
-		// AND Logic (default): Return false on the first failed match.
-		for _, ide := range u.IdentifierFields {
-			idepath := strings.Split(ide, ".")
-
-			val, found, err := unstructured.NestedFieldNoCopy(itemMap, idepath...)
-			if err != nil || !found {
-				// If any identifier is missing, it's not an AND match.
-				return false, nil
-			}
-
-			ok, err := u.isInResource(val, idepath...)
-			if err != nil {
-				// A hard error during comparison should be propagated up.
-				return false, err
-			}
-			if !ok {
-				// If any identifier does not match, it's not an AND match.
-				return false, nil
-			}
-		}
-
-		// If the loop completes, it means all identifiers matched.
-		return true, nil
 	}
 }
 
