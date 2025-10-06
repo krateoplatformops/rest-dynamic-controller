@@ -2,7 +2,6 @@ package restResources
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"strings"
 
@@ -60,32 +59,32 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 	}
 
 	for _, fieldName := range allFields {
-		log.Printf("Managing field: %s", fieldName)
+		//log.Printf("Managing field: %s", fieldName)
 		// Split the field name by '.' to handle nested paths.
 		path := strings.Split(fieldName, ".")
-		log.Printf("Field path split: %v", path)
+		//log.Printf("Field path split: %v", path)
 
 		// Extract the raw value from the response body without copying.
 		value, found, err := unstructured.NestedFieldNoCopy(body, path...)
 		if err != nil || !found {
 			// An error here means the path was invalid or not found.
 			// We can safely continue to the next field.
-			log.Printf("Field '%s' not found in response body or error occurred: %v", fieldName, err)
+			//log.Printf("Field '%s' not found in response body or error occurred: %v", fieldName, err)
 			continue
 		}
-		log.Printf("Extracted value for field '%s': %v", fieldName, value)
+		//log.Printf("Extracted value for field '%s': %v", fieldName, value)
 
 		// Perform deep copy and type conversions (e.g., float64 to int64).
 		convertedValue := deepCopyJSONValue(value)
-		log.Printf("Converted value for field '%s': %v", fieldName, convertedValue)
+		//log.Printf("Converted value for field '%s': %v", fieldName, convertedValue)
 
 		// The destination path in the status should mirror the source path.
 		statusPath := append([]string{"status"}, path...)
-		log.Printf("Setting value for field '%s' at status path: %v", fieldName, statusPath)
+		//log.Printf("Setting value for field '%s' at status path: %v", fieldName, statusPath)
 		if err := unstructured.SetNestedField(mg.Object, convertedValue, statusPath...); err != nil {
 			return fmt.Errorf("setting nested field '%s' in status: %w", fieldName, err)
 		}
-		log.Printf("Successfully set field '%s' with value: %v at path: %v", fieldName, convertedValue, statusPath)
+		//log.Printf("Successfully set field '%s' with value: %v at path: %v", fieldName, convertedValue, statusPath)
 	}
 
 	return nil
