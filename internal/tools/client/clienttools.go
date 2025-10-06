@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -123,18 +122,18 @@ func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath .
 		return false, fmt.Errorf("resource is nil")
 	}
 
-	log.Printf("isInResource: comparing field '%s', API value: '%v'", strings.Join(fieldPath, "."), responseValue)
+	//log.Printf("isInResource: comparing field '%s', API value: '%v'", strings.Join(fieldPath, "."), responseValue)
 
 	// Check 1: Look for the identifier in the 'spec'.
 	if localValue, found, err := unstructured.NestedFieldNoCopy(u.Resource.Object, append([]string{"spec"}, fieldPath...)...); err == nil && found {
-		log.Printf("isInResource: found in spec: '%v'", localValue)
+		//log.Printf("isInResource: found field in spec: '%v'", localValue)
 		// If the field is found in the spec, we compare it.
 		// If it matches, we have a definitive match and can return true.
 		if comparison.DeepEqual(localValue, responseValue) {
-			log.Printf("isInResource: match found in spec.")
+			//log.Printf("isInResource: match found in spec.")
 			return true, nil
 		}
-		log.Printf("isInResource: value in spec did not match.")
+		//log.Printf("isInResource: value in spec did not match.")
 	} else if err != nil {
 		return false, fmt.Errorf("error searching for identifier in spec: %w", err)
 	}
@@ -142,17 +141,19 @@ func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath .
 	// Check 2: If the identifier was not found in spec, or if it was found but did not match,
 	// we proceed to check the 'status'. This is common for server-assigned identifiers.
 	if localValue, found, err := unstructured.NestedFieldNoCopy(u.Resource.Object, append([]string{"status"}, fieldPath...)...); err == nil && found {
-		log.Printf("isInResource: found in status: '%v'", localValue)
+		//log.Printf("isInResource: found field in status: '%v'", localValue)
 		// If found in status, we compare it. This is the last chance for a match.
-		match := comparison.DeepEqual(localValue, responseValue)
-		log.Printf("isInResource: comparison in status returned: %v", match)
-		return match, nil
+		if comparison.DeepEqual(localValue, responseValue) {
+			//log.Printf("isInResource: match found in status.")
+			return true, nil
+		}
+		//log.Printf("isInResource: value in status did not match.")
 	} else if err != nil {
 		return false, fmt.Errorf("error searching for identifier in status: %w", err)
 	}
 
-	// If the field was not found in spec or status, there is no match.
-	log.Printf("isInResource: field '%s' not found in spec or status.", strings.Join(fieldPath, "."))
+	// No match.
+	//log.Printf("isInResource: value for field '%s' not found in spec or status.", strings.Join(fieldPath, "."))
 
 	return false, nil
 }
