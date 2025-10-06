@@ -478,11 +478,6 @@ func TestUnstructuredClient_RequestedBody(t *testing.T) {
 			}
 
 			if got != nil {
-				if got == nil {
-					t.Errorf("RequestedBody() returned nil, want %v", tt.want)
-					return
-				}
-
 				for _, wantItem := range tt.want {
 					if !got.Contains(wantItem) {
 						t.Errorf("RequestedBody() missing expected item %q", wantItem)
