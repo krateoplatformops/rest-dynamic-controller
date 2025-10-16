@@ -98,6 +98,8 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		u.SetAuth(req)
 	}
 
+	// TODO: add libopenapi validator (official library) for the http request
+
 	resp, err := cli.Do(req)
 	if err != nil {
 		return Response{}, fmt.Errorf("making request: %w", err)

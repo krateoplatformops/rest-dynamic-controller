@@ -106,7 +106,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	cli.Resource = mg
 
 	var response restclient.Response
-	// Tries to tries to build the GET API Call, with the given statusFields and specFields values, if it is able to validate the GET request, returns true
+	// Tries to tries to build the `get` action API Call, with the given statusFields and specFields values, if it is able to validate the `get` action request, returns true
 	isKnown := builder.IsResourceKnown(cli, clientInfo, mg)
 	if isKnown {
 		// Getting the external resource by its identifier (e.g GET /resource/{id}).
@@ -145,8 +145,9 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			return controller.ExternalObservation{}, err
 		}
 	} else {
-		// Resource is not known, we try to find it by its fields in the items returned by a "list" API call (e.g GET /resources).
-		// Typically used when the resource does not have an identifier yet, e.g: before creation (first reconcile loop).
+		// Resource is not known, we try to find it by its fields with a `findby` action,
+		// typically searching in the items returned by a "list" API call (e.g GET /resources).
+		// This is typically used when the resource does not have an identifier yet, e.g: before creation (first ever reconcile loop).
 		apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.FindBy)
 		if apiCall == nil {
 			if !unstructuredtools.IsConditionSet(mg, condition.Creating()) && !unstructuredtools.IsConditionSet(mg, condition.Available()) {
