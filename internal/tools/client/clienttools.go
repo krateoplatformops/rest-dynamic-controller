@@ -99,14 +99,15 @@ type UnstructuredClient struct {
 	IdentifierFields      []string
 	IdentifierMatchPolicy string
 	Resource              *unstructured.Unstructured
-	DocScheme             *libopenapi.DocumentModel[v3.Document]
+	Doc                   libopenapi.Document                    // Parsed OpenAPI document by libopenapi, needed for validation
+	DocScheme             *libopenapi.DocumentModel[v3.Document] // OpenAPI document model (high-level)
 	Server                string
 	Debug                 bool
 	SetAuth               func(req *http.Request)
 }
 
 type RequestConfiguration struct {
-	Parameters map[string]string
+	Parameters map[string]string // Path parameters
 	Query      map[string]string
 	Headers    map[string]string
 	Cookies    map[string]string
@@ -114,9 +115,10 @@ type RequestConfiguration struct {
 	Method     string
 }
 
-// isInResource compares a value from an API response with the corresponding value
-// in the local Unstructured resource. It checks for the identifier's presence
-// and correctness in 'spec' first, then falls back to checking 'status'.
+// isInResource is a method used during a "FindBy" operation.
+// It compares a value from an API response with the corresponding value in the local Unstructured resource.
+// It checks for the identifier's presence and correctness in 'spec' first, then falls back to checking 'status'.
+// TODO: add fieldMapping here
 func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath ...string) (bool, error) {
 	if u.Resource == nil {
 		return false, fmt.Errorf("resource is nil")
@@ -282,14 +284,17 @@ func (u *UnstructuredClient) RequestedParams(httpMethod string, path string) (pa
 	headers = stringset.NewStringSet()
 	cookies = stringset.NewStringSet()
 	for _, param := range getDoc.Parameters {
-		if param.In == "path" {
+		switch param.In {
+		case "path":
 			parameters.Add(param.Name)
-		} else if param.In == "query" {
+		case "query":
 			query.Add(param.Name)
-		} else if param.In == "header" {
+		case "header":
 			headers.Add(param.Name)
-		} else if param.In == "cookie" {
+		case "cookie":
 			cookies.Add(param.Name)
+		default:
+			return nil, nil, nil, nil, fmt.Errorf("unknown parameter location: %s", param.In)
 		}
 	}
 	//fmt.Printf("RequestedParams: parameters=%v, query=%v, headers=%v, cookies=%v\n", parameters, query, headers, cookies)
@@ -344,6 +349,7 @@ func BuildClient(ctx context.Context, kubeclient dynamic.Interface, swaggerPath 
 
 	return &UnstructuredClient{
 		Server:    doc.Model.Servers[0].URL,
+		Doc:       d,
 		DocScheme: doc,
 	}, nil
 }

@@ -17,6 +17,36 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+// RequestFieldMappingItem defines a single mapping from a path parameter, query parameter or body field
+// to a field in the Custom Resource.
+type RequestFieldMappingItem struct {
+	// InPath defines the name of the path parameter to be mapped.
+	// Only one of 'inPath', 'inQuery' or 'inBody' can be set.
+	InPath string `json:"inPath,omitempty"`
+
+	// InQuery defines the name of the query parameter to be mapped.
+	// Only one of 'inPath', 'inQuery' or 'inBody' can be set.
+	InQuery string `json:"inQuery,omitempty"`
+
+	// InBody defines the name of the body parameter to be mapped.
+	// Only one of 'inPath', 'inQuery' or 'inBody' can be set.
+	InBody string `json:"inBody,omitempty"`
+
+	// InCustomResource defines the JSONPath to the field within the Custom Resource that holds the value.
+	// For example: 'spec.name' or 'status.metadata.id'.
+	InCustomResource string `json:"inCustomResource"`
+}
+
+// ResponseFieldMappingItem defines a single mapping from a response body field
+// to a field in the Custom Resource's spec for comparison.
+type ResponseFieldMappingItem struct {
+	// InResponseBody defines the JSONPath to the field within the API response body that holds the actual state.
+	InResponseBody string `json:"inResponseBody"`
+
+	// InCustomResource defines the JSONPath to the field within the Custom Resource's spec that holds the desired state.
+	InCustomResource string `json:"inCustomResource"`
+}
+
 type VerbsDescription struct {
 	// Name of the action to perform when this api is called
 	Action string `json:"action"`
@@ -24,8 +54,22 @@ type VerbsDescription struct {
 	Method string `json:"method"`
 	// Path: the path to the api
 	Path string `json:"path"`
-	// // AltFieldMapping: the alternative mapping of the fields to use in the request
-	// AltFieldMapping map[string]string `json:"altFieldMapping,omitempty"`
+
+	// RequestFieldMapping provides explicit mapping from API parameters (path, query, or body)
+	// to fields in the Custom Resource.
+	RequestFieldMapping []RequestFieldMappingItem `json:"requestFieldMapping,omitempty"`
+
+	// ResponseFieldMapping provides explicit, field-by-field mapping from the API response body
+	// to the Custom Resource's spec. This is used as an override to the default comparison logic.
+	//ResponseFieldMapping []ResponseFieldMappingItem `json:"responseFieldMapping,omitempty"`
+
+	// ResponseBodyDataPath defines the path to the nested object in the API response
+	// that contains the fields corresponding to the Custom Resource's spec.
+	// This is useful when the API response wraps the actual data in an outer object under a specific key.
+	// For example, if the response is { status : "success", "data": { "name": "...", "age": 30 } }, this should be "data".
+	// An example of a specification of this format: https://github.com/omniti-labs/jsend
+	// Another similar example: if the response is { "result": { "item": { "name": "...", "age": 30 } } }, this should be "result.item".
+	//ResponseBodyDataPath string `json:"responseBodyDataPath,omitempty"`
 }
 
 type Resource struct {
@@ -190,13 +234,14 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 func (g *dynamicGetter) processConfigurationRef(un *unstructured.Unstructured, info *Info) error {
 	configRef, ok, err := unstructured.NestedStringMap(un.Object, "spec", "configurationRef")
 	if err != nil {
-		return fmt.Errorf("getting spec.configurationRef for '%v' in namespace: %s", un.GetKind(), un.GetNamespace())
+		return fmt.Errorf("getting spec.configurationRef for resource of kind '%v' in namespace: %s", un.GetKind(), un.GetNamespace())
 	}
 	if !ok {
-		return nil // No auth configured
+		//log.Printf("No configurationRef found for resource of kind '%v' in namespace: %s\n", un.GetKind(), un.GetNamespace())
+		return nil // No auth or configuration defined
 	}
 
-	// default namespace used to search the Configuration CR is the same as the unstructured object
+	// The default namespace used to search the Configuration CR is the same namespace as the unstructured object
 	namespace := un.GetNamespace()
 	if val, ok := configRef["namespace"]; ok { // if the namespace is specified in the configRef field, use it to search the Configuration CR
 		namespace = val

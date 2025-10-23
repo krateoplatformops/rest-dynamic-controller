@@ -12,8 +12,7 @@ import (
 )
 
 // isCRUpdated checks if the CR was updated by comparing the fields in the CR with the response from the API call, if existing cr fields are different from the response, it returns false
-func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (comparison.ComparisonResult, error) {
-	// Handle nil input
+func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}, observeVerb *getter.VerbsDescription) (comparison.ComparisonResult, error) {
 	if mg == nil {
 		return comparison.ComparisonResult{
 			IsEqual: false,
@@ -22,7 +21,16 @@ func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (comp
 			},
 		}, fmt.Errorf("mg is nil")
 	}
+	if observeVerb == nil {
+		return comparison.ComparisonResult{
+			IsEqual: false,
+			Reason: &comparison.Reason{
+				Reason: "observeVerb is nil",
+			},
+		}, fmt.Errorf("observeVerb is nil")
+	}
 
+	// Extract the "spec" fields from the mg object
 	m, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 	if err != nil {
 		return comparison.ComparisonResult{

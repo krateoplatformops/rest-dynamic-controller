@@ -171,7 +171,9 @@ func TestIsCRUpdated(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := isCRUpdated(tt.mg, tt.rm)
+			result, err := isCRUpdated(tt.mg, tt.rm, &getter.VerbsDescription{ // placeholder for now
+				Action: "get",
+			})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("isCRUpdated() error = %v, wantErr %v", err, tt.wantErr)
 				return

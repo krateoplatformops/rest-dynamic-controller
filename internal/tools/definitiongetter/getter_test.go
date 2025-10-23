@@ -274,7 +274,7 @@ func TestDynamicGetter_Get(t *testing.T) {
 					Return(schema.GroupVersionResource{Group: "test.io", Version: "v1", Resource: "testresources"}, nil)
 			},
 			wantErr:        true,
-			wantErrMessage: "getting spec.configurationRef for 'TestResource' in namespace: default",
+			wantErrMessage: "getting spec.configurationRef for resource of kind 'TestResource' in namespace: default",
 		},
 		{
 			name: "error when configurationRef points to a non-existent config object",

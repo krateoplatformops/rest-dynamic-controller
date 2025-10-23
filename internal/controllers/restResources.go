@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	customcondition "github.com/krateoplatformops/rest-dynamic-controller/internal/controllers/condition"
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
@@ -101,12 +102,13 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 
 	cli.Debug = meta.IsVerbose(mg)
 	cli.SetAuth = clientInfo.SetAuth
-	cli.IdentifierFields = clientInfo.Resource.Identifiers
+	cli.IdentifierFields = clientInfo.Resource.Identifiers                           // TODO: probably redundant since we pass the resource too
 	cli.IdentifierMatchPolicy = os.Getenv("REST_CONTROLLER_IDENTIFIER_MATCH_POLICY") // If not set, it will default to "OR"
 	cli.Resource = mg
 
 	var response restclient.Response
-	// Tries to tries to build the `get` action API Call, with the given statusFields and specFields values, if it is able to validate the `get` action request, returns true
+	// Tries to tries to build the `get` action API Call, with the given statusFields and specFields values.
+	// If it is able to validate the `get` action request, returns true
 	isKnown := builder.IsResourceKnown(cli, clientInfo, mg)
 	if isKnown {
 		// Getting the external resource by its identifier (e.g GET /resource/{id}).
@@ -151,10 +153,12 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.FindBy)
 		if apiCall == nil {
 			if !unstructuredtools.IsConditionSet(mg, condition.Creating()) && !unstructuredtools.IsConditionSet(mg, condition.Available()) {
+				log.Debug("No get or findby action found for the resource.")
 				log.Debug("External resource is being created", "kind", mg.GetKind())
 				return controller.ExternalObservation{}, nil
 			}
 			log.Debug("API call not found", "action", apiaction.FindBy)
+			log.Debug("No get or findby action found for the resource.")
 			log.Debug("Resource is assumed to be up-to-date.")
 			cond := condition.Available()
 			cond.Message = "Resource is assumed to be up-to-date. API call not found for FindBy."
@@ -248,7 +252,39 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Error(err, "Updating status")
 			return controller.ExternalObservation{}, err
 		}
-		res, err := isCRUpdated(mg, b)
+
+		// If we reach this point, it is guaranteed that either a `get` or `findby` action was performed successfully.
+		// observeVerb will be eventually used by IsCRUpdated to find mapping fields (specific to get or findby).
+		// (if we assume they must be equal we could use just one, but maybe better to be explicit)
+		// Note: observeVerb already in place but currently not used by isCRUpdated
+		// since ResponseFieldMapping is not yet implemented.
+
+		var observeVerb *getter.VerbsDescription
+		for i, verb := range clientInfo.Resource.VerbsDescription {
+			if strings.EqualFold(verb.Action, apiaction.Get.String()) {
+				observeVerb = &clientInfo.Resource.VerbsDescription[i]
+				log.Debug("Found get action verb description", "verb", observeVerb)
+				break
+			}
+		}
+		// FindBy case (edge case, less efficient and uncommon but allowed)
+		if observeVerb == nil {
+			for i, verb := range clientInfo.Resource.VerbsDescription {
+				if strings.EqualFold(verb.Action, apiaction.FindBy.String()) {
+					observeVerb = &clientInfo.Resource.VerbsDescription[i]
+					log.Debug("Found findby action verb description", "verb", observeVerb)
+					break
+				}
+			}
+		}
+
+		if observeVerb == nil {
+			// This should not happen, as we already performed a get or findby action successfully.
+			log.Debug("Observe verb description not found")
+			return controller.ExternalObservation{}, fmt.Errorf("observe verb description not found")
+		}
+
+		res, err := isCRUpdated(mg, b, observeVerb)
 		if err != nil {
 			log.Error(err, "Checking if CR is updated")
 			return controller.ExternalObservation{}, err

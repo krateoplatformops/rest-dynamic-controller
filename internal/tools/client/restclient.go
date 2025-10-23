@@ -43,7 +43,7 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		}
 
 		if len(op.Servers) > 0 {
-			server := op.Servers[0]
+			server := op.Servers[0] // Use the first server defined for the operation (multiple servers per operation are not supported)
 			uri = buildPath(server.URL, path, opts.Parameters, opts.Query)
 		}
 	}
@@ -99,6 +99,21 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 	}
 
 	// TODO: add libopenapi validator (official library) for the http request
+
+	// Create a new Validator
+	//highLevelValidator, validatorErrs := validator.NewValidator(u.Doc)
+	//if len(validatorErrs) > 0 {
+	//	//panic("document is bad")
+	//	log.Printf("warning: OpenAPI document has validation errors: %v", validatorErrs)
+	//}
+	//// Validate the request
+	//requestValid, validationErrors := highLevelValidator.ValidateHttpRequest(req)
+	//
+	//if !requestValid {
+	//	for i := range validationErrors {
+	//		fmt.Println(validationErrors[i].Message) // TODO: something else with the errors
+	//	}
+	//}
 
 	resp, err := cli.Do(req)
 	if err != nil {
@@ -279,13 +294,19 @@ func (u *UnstructuredClient) findItemInList(items []interface{}) (map[string]int
 func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, error) {
 	// Normalize the policy string to lowercase
 	policy := strings.ToLower(u.IdentifierMatchPolicy)
+	//log.Printf("Using identifier match policy: %s", policy)
+	if policy == "" {
+		//log.Printf("No identifier match policy specified, defaulting to 'or'")
+		policy = "or" // Default to "or" if not specified
+	}
 
 	// If no identifiers are specified, no match is possible.
 	if len(u.IdentifierFields) == 0 {
 		return false, nil
 	}
 
-	if policy == "and" {
+	switch policy {
+	case "and":
 		// AND Logic: Return false on the first failed match.
 		for _, ide := range u.IdentifierFields {
 			idepath := strings.Split(ide, ".")
@@ -309,8 +330,7 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 
 		// If the loop completes, it means all identifiers matched.
 		return true, nil
-
-	} else {
+	case "or":
 		// OR Logic (default): Return true on the first successful identifier match.
 		for _, ide := range u.IdentifierFields {
 			idepath := strings.Split(ide, ".")
@@ -335,6 +355,8 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 
 		// If the loop completes, no identifiers matched.
 		return false, nil
+	default:
+		return false, fmt.Errorf("unknown identifier match policy: %s", u.IdentifierMatchPolicy)
 	}
 }
 
