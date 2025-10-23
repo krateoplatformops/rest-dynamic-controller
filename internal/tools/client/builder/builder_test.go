@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/text"
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client/apiaction"
@@ -198,26 +199,26 @@ func TestBuildCallConfig(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name             string
-		callInfo         *CallInfo
-		mg               *unstructured.Unstructured
-		configSpec       map[string]interface{}
-		expectNil        bool
-		expectedMethod   string
-		expectedParams   map[string]string
-		expectedQuery    map[string]string
-		expectedBodyKeys []string
+		name           string
+		callInfo       *CallInfo
+		mg             *unstructured.Unstructured
+		configSpec     map[string]interface{}
+		expectNil      bool
+		expectedMethod string
+		expectedParams map[string]string
+		expectedQuery  map[string]string
+		expectedBody   map[string]interface{}
 	}{
 		{
-			name:             "Happy path",
-			callInfo:         baseCallInfo,
-			mg:               baseMg,
-			configSpec:       nil,
-			expectNil:        false,
-			expectedMethod:   "GET",
-			expectedParams:   map[string]string{"id": "123"},
-			expectedQuery:    map[string]string{"filter": "test"},
-			expectedBodyKeys: []string{"name"},
+			name:           "Happy path",
+			callInfo:       baseCallInfo,
+			mg:             baseMg,
+			configSpec:     nil,
+			expectNil:      false,
+			expectedMethod: "GET",
+			expectedParams: map[string]string{"id": "123"},
+			expectedQuery:  map[string]string{"filter": "test"},
+			expectedBody:   map[string]interface{}{"name": "testname"},
 		},
 		{
 			name:      "Nil callInfo",
@@ -243,11 +244,11 @@ func TestBuildCallConfig(t *testing.T) {
 					},
 				},
 			},
-			expectNil:        false,
-			expectedMethod:   "GET",
-			expectedParams:   map[string]string{"id": "456"},
-			expectedQuery:    map[string]string{"filter": "test"},
-			expectedBodyKeys: []string{"name"},
+			expectNil:      false,
+			expectedMethod: "GET",
+			expectedParams: map[string]string{"id": "456"},
+			expectedQuery:  map[string]string{"filter": "test"},
+			expectedBody:   map[string]interface{}{"name": "testname"},
 		},
 		{
 			name:     "Resource with missing spec",
@@ -259,11 +260,163 @@ func TestBuildCallConfig(t *testing.T) {
 					},
 				},
 			},
-			expectNil:        false,
-			expectedMethod:   "GET",
-			expectedParams:   map[string]string{"id": "123"},
-			expectedQuery:    map[string]string{},
-			expectedBodyKeys: []string{},
+			expectNil:      false,
+			expectedMethod: "GET",
+			expectedParams: map[string]string{"id": "123"},
+			expectedQuery:  map[string]string{},
+			expectedBody:   map[string]interface{}{},
+		},
+		{
+			name: "FieldMapping from status to path",
+			callInfo: &CallInfo{
+				ReqParams: &RequestedParams{
+					Parameters: text.NewStringSet("id"),
+				},
+				RequestFieldMapping: []getter.RequestFieldMappingItem{
+					{
+						InPath:           "id",
+						InCustomResource: "status.metadata.id",
+					},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"status": map[string]interface{}{
+						"metadata": map[string]interface{}{
+							"id": "subnet-123",
+						},
+					},
+				},
+			},
+			expectedParams: map[string]string{
+				"id": "subnet-123",
+			},
+			expectedQuery: map[string]string{},
+			expectedBody:  map[string]interface{}{},
+		},
+		{
+			name: "FieldMapping from spec to query",
+			callInfo: &CallInfo{
+				ReqParams: &RequestedParams{
+					Query: text.NewStringSet("ignoreDeleted"),
+				},
+				RequestFieldMapping: []getter.RequestFieldMappingItem{
+					{
+						InQuery:          "ignoreDeleted",
+						InCustomResource: "spec.ignoreDeletedStatus",
+					},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"ignoreDeletedStatus": true,
+					},
+				},
+			},
+			expectedParams: map[string]string{},
+			expectedQuery: map[string]string{
+				"ignoreDeleted": "true",
+			},
+			expectedBody: map[string]interface{}{},
+		},
+		{
+			name: "FieldMapping from spec to body",
+			callInfo: &CallInfo{
+				ReqParams: &RequestedParams{
+					Body: text.NewStringSet("instanceName", "cores"),
+				},
+				RequestFieldMapping: []getter.RequestFieldMappingItem{
+					{
+						InBody:           "instanceName",
+						InCustomResource: "spec.name",
+					},
+					{
+						InBody:           "cores",
+						InCustomResource: "spec.cpu",
+					},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"name": "my-instance",
+						"cpu":  4,
+					},
+				},
+			},
+			expectedParams: map[string]string{},
+			expectedQuery:  map[string]string{},
+			expectedBody: map[string]interface{}{
+				"instanceName": "my-instance",
+				"cores":        4,
+			},
+		},
+		{
+			name: "Mixed mapping",
+			callInfo: &CallInfo{
+				ReqParams: &RequestedParams{
+					Parameters: text.NewStringSet("projectId", "vpcId", "id"),
+				},
+				RequestFieldMapping: []getter.RequestFieldMappingItem{
+					{
+						InPath:           "id",
+						InCustomResource: "status.metadata.id",
+					},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"projectId": "p1",
+						"vpcId":     "v1",
+					},
+					"status": map[string]interface{}{
+						"metadata": map[string]interface{}{
+							"id": "subnet-123",
+						},
+					},
+				},
+			},
+			expectedParams: map[string]string{
+				"projectId": "p1",
+				"vpcId":     "v1",
+				"id":        "subnet-123",
+			},
+			expectedQuery: map[string]string{},
+			expectedBody:  map[string]interface{}{},
+		},
+		{
+			name: "Field renaming",
+			callInfo: &CallInfo{
+				ReqParams: &RequestedParams{
+					Parameters: text.NewStringSet("owner", "repo"),
+				},
+				RequestFieldMapping: []getter.RequestFieldMappingItem{
+					{
+						InPath:           "owner",
+						InCustomResource: "spec.org",
+					},
+					{
+						InPath:           "repo",
+						InCustomResource: "spec.name",
+					},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"org":  "my-org",
+						"name": "my-repo",
+					},
+				},
+			},
+			expectedParams: map[string]string{
+				"owner": "my-org",
+				"repo":  "my-repo",
+			},
+			expectedQuery: map[string]string{},
+			expectedBody:  map[string]interface{}{},
 		},
 	}
 
@@ -277,16 +430,90 @@ func TestBuildCallConfig(t *testing.T) {
 			}
 
 			assert.NotNil(t, config)
-			assert.Equal(t, tc.expectedMethod, config.Method)
-			assert.Equal(t, tc.expectedParams, config.Parameters)
-			assert.Equal(t, tc.expectedQuery, config.Query)
+			if tc.expectedMethod != "" {
+				assert.Equal(t, tc.expectedMethod, config.Method)
+			}
+			if diff := cmp.Diff(tc.expectedParams, config.Parameters); diff != "" {
+				t.Errorf("mismatch in parameters (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.expectedQuery, config.Query); diff != "" {
+				t.Errorf("mismatch in query (-want +got):\n%s", diff)
+			}
 
 			bodyMap, ok := config.Body.(map[string]interface{})
 			assert.True(t, ok)
-			assert.Len(t, bodyMap, len(tc.expectedBodyKeys))
-			for _, key := range tc.expectedBodyKeys {
-				assert.Contains(t, bodyMap, key)
+			if diff := cmp.Diff(tc.expectedBody, bodyMap); diff != "" {
+				t.Errorf("mismatch in body (-want +got):\n%s", diff)
 			}
+		})
+	}
+}
+
+func TestBuildCallConfig_WithMerge(t *testing.T) {
+	testCases := []struct {
+		name            string
+		callInfo        *CallInfo
+		mg              *unstructured.Unstructured
+		configSpec      map[string]interface{}
+		expectedQuery   map[string]string
+		expectedHeaders map[string]string
+		expectedBody    map[string]interface{}
+	}{
+		{
+			name: "Values from config and resource are merged correctly",
+			callInfo: &CallInfo{
+				Action: apiaction.Get,
+				ReqParams: &RequestedParams{
+					Query:   text.NewStringSet("filter", "api-version"),
+					Body:    text.NewStringSet("name", "description"),
+					Headers: text.NewStringSet("X-Custom-Header"),
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"filter": "from-resource", // This should not override the value from config
+						"name":   "from-resource",
+					},
+				},
+			},
+			configSpec: map[string]interface{}{
+				"query": map[string]interface{}{
+					"get": map[string]interface{}{
+						"api-version": "v1-from-config",
+						"filter":      "from-config",
+					},
+				},
+				"headers": map[string]interface{}{
+					"get": map[string]interface{}{
+						"X-Custom-Header": "from-config",
+					},
+				},
+			},
+			expectedQuery: map[string]string{
+				"api-version": "v1-from-config",
+				"filter":      "from-config",
+			},
+			expectedHeaders: map[string]string{
+				"X-Custom-Header": "from-config",
+			},
+			expectedBody: map[string]interface{}{
+				"name": "from-resource",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			config := BuildCallConfig(tc.callInfo, tc.mg, tc.configSpec)
+
+			assert.NotNil(t, config, "config should not be nil")
+			assert.Equal(t, tc.expectedQuery, config.Query)
+			assert.Equal(t, tc.expectedHeaders, config.Headers)
+
+			body, ok := config.Body.(map[string]interface{})
+			assert.True(t, ok, "body should be a map")
+			assert.Equal(t, tc.expectedBody, body)
 		})
 	}
 }
@@ -396,7 +623,7 @@ func TestProcessFields(t *testing.T) {
 			expectedBody:   map[string]interface{}{"name": "testname"},
 		},
 		{
-			name: "Field used in Path and Body",
+			name: "Field used both in Path and Body",
 			callInfo: &CallInfo{
 				ReqParams: &RequestedParams{
 					Parameters: text.NewStringSet("id"),
@@ -430,75 +657,362 @@ func TestProcessFields(t *testing.T) {
 
 			_, exists := reqConfig.Parameters[""]
 			assert.False(t, exists, "empty field should not be processed")
+
+			_, exists = reqConfig.Query[""]
+			assert.False(t, exists, "empty field should not be processed")
+
+			_, exists = mapBody[""]
+			assert.False(t, exists, "empty field should not be processed")
+
 		})
 	}
 }
 
-func TestBuildCallConfig_WithMerge(t *testing.T) {
+func TestApplyConfigSpec(t *testing.T) {
 	testCases := []struct {
 		name            string
-		callInfo        *CallInfo
-		mg              *unstructured.Unstructured
 		configSpec      map[string]interface{}
-		expectedQuery   map[string]string
-		expectedHeaders map[string]string
-		expectedBody    map[string]interface{}
+		action          string
+		initialReq      *restclient.RequestConfiguration
+		expectedReq     *restclient.RequestConfiguration
+		expectNoChanges bool
 	}{
 		{
-			name: "Values from config and resource are merged correctly",
-			callInfo: &CallInfo{
-				Action: apiaction.Get,
-				ReqParams: &RequestedParams{
-					Query:   text.NewStringSet("filter", "api-version"),
-					Body:    text.NewStringSet("name", "description"),
-					Headers: text.NewStringSet("X-Custom-Header"),
-				},
-			},
-			mg: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"spec": map[string]interface{}{
-						"filter": "from-resource", // This should override the value from config
-						"name":   "from-resource",
-					},
-				},
-			},
+			name:   "Happy path - all fields populated for 'get' action",
+			action: "get",
 			configSpec: map[string]interface{}{
-				"query": map[string]interface{}{
-					"get": map[string]interface{}{
-						"api-version": "v1-from-config",
-						"filter":      "from-config",
-					},
-				},
 				"headers": map[string]interface{}{
 					"get": map[string]interface{}{
-						"X-Custom-Header": "from-config",
+						"X-Test-Header": "header-value",
+						"X-Another":     "another-header",
+					},
+					"post": map[string]interface{}{ // This should be ignored since we are dealing with "get" action
+						"X-Post-Header": "post-header",
+					},
+				},
+				"query": map[string]interface{}{
+					"get": map[string]interface{}{
+						"param1": "value1",
+						"param2": int64(123), // non-string value
+					},
+				},
+				"cookies": map[string]interface{}{
+					"get": map[string]interface{}{
+						"session": "abc",
+					},
+				},
+				"path": map[string]interface{}{
+					"get": map[string]interface{}{
+						"userId": "user-123",
 					},
 				},
 			},
-			expectedQuery: map[string]string{
-				"api-version": "v1-from-config",
-				"filter":      "from-resource",
+			initialReq: &restclient.RequestConfiguration{
+				Headers:    make(map[string]string),
+				Query:      make(map[string]string),
+				Cookies:    make(map[string]string),
+				Parameters: make(map[string]string),
 			},
-			expectedHeaders: map[string]string{
-				"X-Custom-Header": "from-config",
+			expectedReq: &restclient.RequestConfiguration{
+				Headers: map[string]string{
+					"X-Test-Header": "header-value",
+					"X-Another":     "another-header",
+				},
+				Query: map[string]string{
+					"param1": "value1",
+					"param2": "123", // Converted to string
+				},
+				Cookies: map[string]string{
+					"session": "abc",
+				},
+				Parameters: map[string]string{
+					"userId": "user-123",
+				},
 			},
-			expectedBody: map[string]interface{}{
-				"name": "from-resource",
+		},
+		{
+			name:       "Nil configSpec",
+			action:     "get",
+			configSpec: nil,
+			initialReq: &restclient.RequestConfiguration{
+				Headers:    make(map[string]string),
+				Query:      make(map[string]string),
+				Cookies:    make(map[string]string),
+				Parameters: make(map[string]string),
+			},
+			expectNoChanges: true,
+		},
+		{
+			name:       "Empty configSpec",
+			action:     "get",
+			configSpec: map[string]interface{}{},
+			initialReq: &restclient.RequestConfiguration{
+				Headers:    make(map[string]string),
+				Query:      make(map[string]string),
+				Cookies:    make(map[string]string),
+				Parameters: make(map[string]string),
+			},
+			expectNoChanges: true,
+		},
+		{
+			name:   "No matching action in configSpec",
+			action: "delete",
+			configSpec: map[string]interface{}{
+				"headers": map[string]interface{}{
+					"get": map[string]interface{}{
+						"X-Test-Header": "header-value",
+					},
+				},
+			},
+			initialReq: &restclient.RequestConfiguration{
+				Headers:    make(map[string]string),
+				Query:      make(map[string]string),
+				Cookies:    make(map[string]string),
+				Parameters: make(map[string]string),
+			},
+			expectNoChanges: true,
+		},
+		{
+			name:   "Partially matching configSpec",
+			action: "get",
+			configSpec: map[string]interface{}{
+				"headers": map[string]interface{}{
+					"get": map[string]interface{}{
+						"X-Test-Header": "header-value",
+					},
+				},
+				// No "query" for "get", so this should be ignored
+				"query": map[string]interface{}{
+					"post": map[string]interface{}{
+						"param1": "value1",
+					},
+				},
+			},
+			initialReq: &restclient.RequestConfiguration{
+				Headers:    make(map[string]string),
+				Query:      make(map[string]string),
+				Cookies:    make(map[string]string),
+				Parameters: make(map[string]string),
+			},
+			expectedReq: &restclient.RequestConfiguration{
+				Headers: map[string]string{
+					"X-Test-Header": "header-value",
+				},
+				Query:      make(map[string]string),
+				Cookies:    make(map[string]string),
+				Parameters: make(map[string]string),
 			},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			config := BuildCallConfig(tc.callInfo, tc.mg, tc.configSpec)
+			// If we expect no changes, the expected state is a clone of the initial state.
+			if tc.expectNoChanges {
+				tc.expectedReq = &restclient.RequestConfiguration{
+					Headers:    make(map[string]string),
+					Query:      make(map[string]string),
+					Cookies:    make(map[string]string),
+					Parameters: make(map[string]string),
+				}
+				for k, v := range tc.initialReq.Headers {
+					tc.expectedReq.Headers[k] = v
+				}
+				for k, v := range tc.initialReq.Query {
+					tc.expectedReq.Query[k] = v
+				}
+				for k, v := range tc.initialReq.Cookies {
+					tc.expectedReq.Cookies[k] = v
+				}
+				for k, v := range tc.initialReq.Parameters {
+					tc.expectedReq.Parameters[k] = v
+				}
+			}
 
-			assert.NotNil(t, config, "config should not be nil")
-			assert.Equal(t, tc.expectedQuery, config.Query)
-			assert.Equal(t, tc.expectedHeaders, config.Headers)
+			applyConfigSpec(tc.initialReq, tc.configSpec, tc.action)
 
-			body, ok := config.Body.(map[string]interface{})
-			assert.True(t, ok, "body should be a map")
-			assert.Equal(t, tc.expectedBody, body)
+			assert.Equal(t, tc.expectedReq.Headers, tc.initialReq.Headers)
+			assert.Equal(t, tc.expectedReq.Query, tc.initialReq.Query)
+			assert.Equal(t, tc.expectedReq.Cookies, tc.initialReq.Cookies)
+			assert.Equal(t, tc.expectedReq.Parameters, tc.initialReq.Parameters)
+		})
+	}
+}
+
+func TestApplyRequestFieldMapping(t *testing.T) {
+	testCases := []struct {
+		name              string
+		callInfo          *CallInfo
+		mg                *unstructured.Unstructured
+		initialReqConfig  *restclient.RequestConfiguration
+		initialMapBody    map[string]interface{}
+		expectedReqConfig *restclient.RequestConfiguration
+		expectedMapBody   map[string]interface{}
+	}{
+		{
+			name: "Map from spec to path, query, and body",
+			callInfo: &CallInfo{
+				RequestFieldMapping: []getter.RequestFieldMappingItem{
+					{InPath: "userId", InCustomResource: "spec.userIdentifier"},
+					{InQuery: "filter", InCustomResource: "spec.queryFilter"},
+					{InBody: "itemName", InCustomResource: "spec.name"},
+					{InBody: "itemValue", InCustomResource: "spec.value"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"userIdentifier": "user-123",
+						"queryFilter":    "active",
+						"name":           "my-item",
+						"value":          100,
+					},
+				},
+			},
+			initialReqConfig: &restclient.RequestConfiguration{
+				Parameters: make(map[string]string),
+				Query:      make(map[string]string),
+			},
+			initialMapBody: make(map[string]interface{}),
+			expectedReqConfig: &restclient.RequestConfiguration{
+				Parameters: map[string]string{"userId": "user-123"},
+				Query:      map[string]string{"filter": "active"},
+			},
+			expectedMapBody: map[string]interface{}{
+				"itemName":  "my-item",
+				"itemValue": 100,
+			},
+		},
+		{
+			name: "Map from nested status field to path",
+			callInfo: &CallInfo{
+				RequestFieldMapping: []getter.RequestFieldMappingItem{
+					{InPath: "id", InCustomResource: "status.metadata.id"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"status": map[string]interface{}{
+						"metadata": map[string]interface{}{
+							"id": "subnet-xyz",
+						},
+					},
+				},
+			},
+			initialReqConfig: &restclient.RequestConfiguration{
+				Parameters: make(map[string]string),
+				Query:      make(map[string]string),
+			},
+			initialMapBody: make(map[string]interface{}),
+			expectedReqConfig: &restclient.RequestConfiguration{
+				Parameters: map[string]string{"id": "subnet-xyz"},
+				Query:      map[string]string{},
+			},
+			expectedMapBody: make(map[string]interface{}),
+		},
+		{
+			name: "Field not found in custom resource", // Eventually, this should not be experienced since the validation of presence is done earlier in the oasgen-provider
+			callInfo: &CallInfo{
+				RequestFieldMapping: []getter.RequestFieldMappingItem{
+					{InPath: "id", InCustomResource: "spec.nonExistent"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{"someOtherField": "value"},
+				},
+			},
+			initialReqConfig: &restclient.RequestConfiguration{
+				Parameters: make(map[string]string),
+				Query:      make(map[string]string),
+			},
+			initialMapBody: make(map[string]interface{}),
+			expectedReqConfig: &restclient.RequestConfiguration{
+				Parameters: make(map[string]string),
+				Query:      make(map[string]string),
+			},
+			expectedMapBody: make(map[string]interface{}),
+		},
+		{
+			name: "Nil RequestFieldMapping",
+			callInfo: &CallInfo{
+				RequestFieldMapping: nil,
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{"spec": map[string]interface{}{"id": "123"}},
+			},
+			initialReqConfig: &restclient.RequestConfiguration{
+				Parameters: make(map[string]string),
+				Query:      make(map[string]string),
+			},
+			initialMapBody: make(map[string]interface{}),
+			expectedReqConfig: &restclient.RequestConfiguration{
+				Parameters: make(map[string]string),
+				Query:      make(map[string]string),
+			},
+			expectedMapBody: make(map[string]interface{}),
+		},
+		{
+			name: "Empty RequestFieldMapping",
+			callInfo: &CallInfo{
+				RequestFieldMapping: []getter.RequestFieldMappingItem{},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{"spec": map[string]interface{}{"id": "123"}},
+			},
+			initialReqConfig: &restclient.RequestConfiguration{
+				Parameters: make(map[string]string),
+				Query:      make(map[string]string),
+			},
+			initialMapBody: make(map[string]interface{}),
+			expectedReqConfig: &restclient.RequestConfiguration{
+				Parameters: make(map[string]string),
+				Query:      make(map[string]string),
+			},
+			expectedMapBody: make(map[string]interface{}),
+		},
+		{
+			name: "Mapping overwrites existing values", // TODO: check if this could happen in practice
+			callInfo: &CallInfo{
+				RequestFieldMapping: []getter.RequestFieldMappingItem{
+					{InPath: "id", InCustomResource: "spec.id"},
+					{InBody: "name", InCustomResource: "spec.name"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"id":   "new-id",
+						"name": "new-name",
+					},
+				},
+			},
+			initialReqConfig: &restclient.RequestConfiguration{
+				Parameters: map[string]string{"id": "old-id"},
+				Query:      make(map[string]string),
+			},
+			initialMapBody: map[string]interface{}{"name": "old-name"},
+			expectedReqConfig: &restclient.RequestConfiguration{
+				Parameters: map[string]string{"id": "new-id"},
+				Query:      make(map[string]string),
+			},
+			expectedMapBody: map[string]interface{}{"name": "new-name"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			applyRequestFieldMapping(tc.callInfo, tc.mg, tc.initialReqConfig, tc.initialMapBody)
+
+			if diff := cmp.Diff(tc.expectedReqConfig.Parameters, tc.initialReqConfig.Parameters); diff != "" {
+				t.Errorf("mismatch in parameters (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.expectedReqConfig.Query, tc.initialReqConfig.Query); diff != "" {
+				t.Errorf("mismatch in query (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.expectedMapBody, tc.initialMapBody); diff != "" {
+				t.Errorf("mismatch in body (-want +got):\n%s", diff)
+			}
 		})
 	}
 }
