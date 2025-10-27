@@ -36,12 +36,17 @@ func (r ComparisonResult) String() string {
 // Slices order is considered, so if the order of elements in slices is different, they are considered unequal.
 // If the values are maps or slices, it recursively compares them.
 func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path ...string) (ComparisonResult, error) {
+	//log.Printf("[CompareExisting] Comparing at path: %v", path)
+
+	// Iterate over keys in the first map (mg, representing the CR on the cluster)
 	for key, value := range mg {
 		currentPath := append(path, key)
 		pathStr := fmt.Sprintf("%v", currentPath)
 
 		rmValue, ok := rm[key]
 		if !ok {
+			// Key does not exist in rm, ignore and continue
+			//log.Printf("[CompareExisting] Key %s not found in rm, ignoring.", pathStr)
 			continue
 		}
 

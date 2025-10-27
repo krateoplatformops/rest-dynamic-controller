@@ -29,6 +29,9 @@ func (r *Response) IsPending() bool {
 }
 
 func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (Response, error) {
+	if u.DocScheme == nil {
+		return Response{}, fmt.Errorf("OpenAPI document scheme not initialized")
+	}
 	uri := buildPath(u.Server, path, opts.Parameters, opts.Query)
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {
@@ -43,7 +46,7 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		}
 
 		if len(op.Servers) > 0 {
-			server := op.Servers[0]
+			server := op.Servers[0] // Use the first server defined for the operation (multiple servers per operation are not supported)
 			uri = buildPath(server.URL, path, opts.Parameters, opts.Query)
 		}
 	}
@@ -97,6 +100,21 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 	if u.SetAuth != nil {
 		u.SetAuth(req)
 	}
+
+	// TODO: to be re-enabled when libopenapi-validator is stable
+	//if u.Validator != nil {
+	//	valid, validationErrors := u.Validator.ValidateRequest(req)
+	//	if !valid {
+	//		log.Println("Request is NOT valid according to OpenAPI specification:")
+	//		for _, err := range validationErrors {
+	//			log.Println(err.Error())
+	//		}
+	//		// Returning a generic error as the validation errors are already logged.
+	//		return Response{}, fmt.Errorf("request validation failed")
+	//	} else {
+	//		log.Println("Request is valid according to OpenAPI specification")
+	//	}
+	//}
 
 	resp, err := cli.Do(req)
 	if err != nil {
@@ -160,8 +178,8 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 }
 
 // FindBy locates a specific resource within an API response it retrieves.
-// It serves as the primary orchestrator for the find operation,
-// delegating response parsing and item matching to helper functions.
+// It serves as the primary orchestrator for the `FindBy` action of the Rest Dynamic Controller,
+// delegating response parsing and item matching to helper functions: extractItemsFromResponse, findItemInList, and isItemMatch.
 func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (Response, error) {
 	// Execute the initial API call.
 	response, err := u.Call(ctx, cli, path, opts)
@@ -277,13 +295,19 @@ func (u *UnstructuredClient) findItemInList(items []interface{}) (map[string]int
 func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, error) {
 	// Normalize the policy string to lowercase
 	policy := strings.ToLower(u.IdentifierMatchPolicy)
+	//log.Printf("Using identifier match policy: %s", policy)
+	if policy == "" {
+		//log.Printf("No identifier match policy specified, defaulting to 'or'")
+		policy = "or" // Default to "or" if not specified
+	}
 
 	// If no identifiers are specified, no match is possible.
 	if len(u.IdentifierFields) == 0 {
 		return false, nil
 	}
 
-	if policy == "and" {
+	switch policy {
+	case "and":
 		// AND Logic: Return false on the first failed match.
 		for _, ide := range u.IdentifierFields {
 			idepath := strings.Split(ide, ".")
@@ -307,8 +331,7 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 
 		// If the loop completes, it means all identifiers matched.
 		return true, nil
-
-	} else {
+	case "or":
 		// OR Logic (default): Return true on the first successful identifier match.
 		for _, ide := range u.IdentifierFields {
 			idepath := strings.Split(ide, ".")
@@ -333,6 +356,8 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 
 		// If the loop completes, no identifiers matched.
 		return false, nil
+	default:
+		return false, fmt.Errorf("unknown identifier match policy: %s", u.IdentifierMatchPolicy)
 	}
 }
 
@@ -410,3 +435,13 @@ func (d *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 
 	return resp, err
 }
+
+// TODO: to be re-enabled when libopenapi-validator is stable
+// Validate delegates the request validation to the underlying validator.
+//func (u *UnstructuredClient) Validate(req *http.Request) (bool, []error) {
+//	if u.Validator == nil {
+//		// If no validator is configured, assume the request is valid.
+//		return true, nil
+//	}
+//	return u.Validator.ValidateRequest(req)
+//}

@@ -23,6 +23,12 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
+// TODO: to be re-enabled when libopenapi-validator is stable
+// Validator defines the interface for request validation.
+//type Validator interface {
+//	ValidateRequest(req *http.Request) (bool, []error)
+//}
+
 type APICallType string
 
 type AuthType string
@@ -35,6 +41,7 @@ const (
 func (a AuthType) String() string {
 	return string(a)
 }
+
 func ToType(ty string) (AuthType, error) {
 	switch ty {
 	case "basic":
@@ -93,20 +100,23 @@ type UnstructuredClientInterface interface {
 	RequestedParams(httpMethod string, path string) (parameters, query, headers, cookies stringset.StringSet, err error)
 	FindBy(ctx context.Context, cli *http.Client, path string, conf *RequestConfiguration) (Response, error)
 	Call(ctx context.Context, cli *http.Client, path string, conf *RequestConfiguration) (Response, error)
+	//Validate(req *http.Request) (bool, []error) // TODO: to be re-enabled when libopenapi-validator is stable (to be renamed to ValidateRequest)
 }
 
 type UnstructuredClient struct {
 	IdentifierFields      []string
 	IdentifierMatchPolicy string
 	Resource              *unstructured.Unstructured
-	DocScheme             *libopenapi.DocumentModel[v3.Document]
-	Server                string
-	Debug                 bool
-	SetAuth               func(req *http.Request)
+	//Doc                   libopenapi.Document         // Parsed OpenAPI document by libopenapi, needed for http request validation. TODO: to be re-enabled when libopenapi-validator is stable
+	DocScheme *libopenapi.DocumentModel[v3.Document] // OpenAPI document model (high-level)
+	Server    string
+	Debug     bool
+	SetAuth   func(req *http.Request)
+	//Validator             Validator 				    // Validator for request validation. TODO: to be re-enabled when libopenapi-validator is stable
 }
 
 type RequestConfiguration struct {
-	Parameters map[string]string
+	Parameters map[string]string // Path parameters
 	Query      map[string]string
 	Headers    map[string]string
 	Cookies    map[string]string
@@ -114,9 +124,10 @@ type RequestConfiguration struct {
 	Method     string
 }
 
-// isInResource compares a value from an API response with the corresponding value
-// in the local Unstructured resource. It checks for the identifier's presence
-// and correctness in 'spec' first, then falls back to checking 'status'.
+// isInResource is a method used during a "FindBy" operation.
+// It compares a value from an API response with the corresponding value in the local Unstructured resource.
+// It checks for the identifier's presence and correctness in 'spec' first, then falls back to checking 'status'.
+// TODO: to be evaluated for potential addition of `ResponseFieldMapping`
 func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath ...string) (bool, error) {
 	if u.Resource == nil {
 		return false, fmt.Errorf("resource is nil")
@@ -282,14 +293,17 @@ func (u *UnstructuredClient) RequestedParams(httpMethod string, path string) (pa
 	headers = stringset.NewStringSet()
 	cookies = stringset.NewStringSet()
 	for _, param := range getDoc.Parameters {
-		if param.In == "path" {
+		switch param.In {
+		case "path":
 			parameters.Add(param.Name)
-		} else if param.In == "query" {
+		case "query":
 			query.Add(param.Name)
-		} else if param.In == "header" {
+		case "header":
 			headers.Add(param.Name)
-		} else if param.In == "cookie" {
+		case "cookie":
 			cookies.Add(param.Name)
+		default:
+			return nil, nil, nil, nil, fmt.Errorf("unknown parameter location: %s", param.In)
 		}
 	}
 	//fmt.Printf("RequestedParams: parameters=%v, query=%v, headers=%v, cookies=%v\n", parameters, query, headers, cookies)
@@ -342,9 +356,17 @@ func BuildClient(ctx context.Context, kubeclient dynamic.Interface, swaggerPath 
 		return nil, fmt.Errorf("no servers found in the document")
 	}
 
+	// TODO: to be re-enabled when libopenapi-validator is stable
+	//validator, err := NewOpenAPIValidator(d)
+	//if err != nil {
+	//	return nil, fmt.Errorf("failed to create validator: %w", err)
+	//}
+
 	return &UnstructuredClient{
-		Server:    doc.Model.Servers[0].URL,
+		Server: doc.Model.Servers[0].URL,
+		//Doc:       d,
 		DocScheme: doc,
+		//Validator: validator,
 	}, nil
 }
 

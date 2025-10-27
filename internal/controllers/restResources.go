@@ -101,12 +101,13 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 
 	cli.Debug = meta.IsVerbose(mg)
 	cli.SetAuth = clientInfo.SetAuth
-	cli.IdentifierFields = clientInfo.Resource.Identifiers
+	cli.IdentifierFields = clientInfo.Resource.Identifiers                           // TODO: probably redundant since we pass the resource too
 	cli.IdentifierMatchPolicy = os.Getenv("REST_CONTROLLER_IDENTIFIER_MATCH_POLICY") // If not set, it will default to "OR"
 	cli.Resource = mg
 
 	var response restclient.Response
-	// Tries to tries to build the GET API Call, with the given statusFields and specFields values, if it is able to validate the GET request, returns true
+	// Tries to tries to build the `get` action API Call, with the given statusFields and specFields values.
+	// If it is able to validate the `get` action request, returns true
 	isKnown := builder.IsResourceKnown(cli, clientInfo, mg)
 	if isKnown {
 		// Getting the external resource by its identifier (e.g GET /resource/{id}).
@@ -145,15 +146,18 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			return controller.ExternalObservation{}, err
 		}
 	} else {
-		// Resource is not known, we try to find it by its fields in the items returned by a "list" API call (e.g GET /resources).
-		// Typically used when the resource does not have an identifier yet, e.g: before creation (first reconcile loop).
+		// Resource is not known, we try to find it by its fields with a `findby` action,
+		// typically searching in the items returned by a "list" API call (e.g GET /resources).
+		// This is typically used when the resource does not have an identifier yet, e.g: before creation (first ever reconcile loop).
 		apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.FindBy)
 		if apiCall == nil {
 			if !unstructuredtools.IsConditionSet(mg, condition.Creating()) && !unstructuredtools.IsConditionSet(mg, condition.Available()) {
+				log.Debug("No get or findby action found for the resource.")
 				log.Debug("External resource is being created", "kind", mg.GetKind())
 				return controller.ExternalObservation{}, nil
 			}
 			log.Debug("API call not found", "action", apiaction.FindBy)
+			log.Debug("No get or findby action found for the resource.")
 			log.Debug("Resource is assumed to be up-to-date.")
 			cond := condition.Available()
 			cond.Message = "Resource is assumed to be up-to-date. API call not found for FindBy."
@@ -247,6 +251,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Error(err, "Updating status")
 			return controller.ExternalObservation{}, err
 		}
+
 		res, err := isCRUpdated(mg, b)
 		if err != nil {
 			log.Error(err, "Checking if CR is updated")
