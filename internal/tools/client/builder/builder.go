@@ -205,25 +205,16 @@ func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *get
 	}
 
 	apiCall, callInfo, err := APICallBuilder(cli, clientInfo, apiaction.Get)
-	if apiCall == nil {
+	if apiCall == nil || err != nil {
 		return false
 	}
-	if err != nil {
-		return false
-	}
+
 	reqConfiguration := BuildCallConfig(callInfo, mg, clientInfo.ConfigurationSpec)
 	if reqConfiguration == nil {
 		return false
 	}
 
-	actionGetMethod := "GET"
-	for _, descr := range clientInfo.Resource.VerbsDescription {
-		if strings.EqualFold(descr.Action, apiaction.Get.String()) { // Needed if the `get` action in RestDefinition is not mapped to GET method (probably very uncommon)
-			actionGetMethod = descr.Method
-		}
-	}
-
-	return cli.ValidateRequest(actionGetMethod, callInfo.Path, reqConfiguration.Parameters, reqConfiguration.Query, reqConfiguration.Headers, reqConfiguration.Cookies) == nil
+	return cli.ValidateRequest(callInfo.Method, callInfo.Path, reqConfiguration.Parameters, reqConfiguration.Query, reqConfiguration.Headers, reqConfiguration.Cookies) == nil
 }
 
 func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfiguration *restclient.RequestConfiguration, mapBody map[string]interface{}) {
@@ -246,7 +237,7 @@ func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfigu
 
 		// Note: probably headers and cookies are better to be set ONLY in the Configuration CR spec
 		// (and currently it is only possible there)
-		// Therefore, we do not set them here since we are processing the main resource fields
+		// Therefore, we do not set them here since we are processing only the main resource fields
 
 		if callInfo.ReqParams.Body.Contains(field) {
 			if mapBody[field] == nil {

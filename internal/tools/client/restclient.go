@@ -29,6 +29,9 @@ func (r *Response) IsPending() bool {
 }
 
 func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (Response, error) {
+	if u.DocScheme == nil {
+		return Response{}, fmt.Errorf("OpenAPI document scheme not initialized")
+	}
 	uri := buildPath(u.Server, path, opts.Parameters, opts.Query)
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {
@@ -98,20 +101,18 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		u.SetAuth(req)
 	}
 
-	// TODO: add libopenapi validator (official library) for the http request
-
-	// Create a new Validator
-	//highLevelValidator, validatorErrs := validator.NewValidator(u.Doc)
-	//if len(validatorErrs) > 0 {
-	//	//panic("document is bad")
-	//	log.Printf("warning: OpenAPI document has validation errors: %v", validatorErrs)
-	//}
-	//// Validate the request
-	//requestValid, validationErrors := highLevelValidator.ValidateHttpRequest(req)
-	//
-	//if !requestValid {
-	//	for i := range validationErrors {
-	//		fmt.Println(validationErrors[i].Message) // TODO: something else with the errors
+	// TODO: to be re-enabled when libopenapi-validator is stable
+	//if u.Validator != nil {
+	//	valid, validationErrors := u.Validator.ValidateRequest(req)
+	//	if !valid {
+	//		log.Println("Request is NOT valid according to OpenAPI specification:")
+	//		for _, err := range validationErrors {
+	//			log.Println(err.Error())
+	//		}
+	//		// Returning a generic error as the validation errors are already logged.
+	//		return Response{}, fmt.Errorf("request validation failed")
+	//	} else {
+	//		log.Println("Request is valid according to OpenAPI specification")
 	//	}
 	//}
 
@@ -177,8 +178,8 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 }
 
 // FindBy locates a specific resource within an API response it retrieves.
-// It serves as the primary orchestrator for the find operation,
-// delegating response parsing and item matching to helper functions.
+// It serves as the primary orchestrator for the `FindBy` action of the Rest Dynamic Controller,
+// delegating response parsing and item matching to helper functions: extractItemsFromResponse, findItemInList, and isItemMatch.
 func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (Response, error) {
 	// Execute the initial API call.
 	response, err := u.Call(ctx, cli, path, opts)
@@ -434,3 +435,13 @@ func (d *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 
 	return resp, err
 }
+
+// TODO: to be re-enabled when libopenapi-validator is stable
+// Validate delegates the request validation to the underlying validator.
+//func (u *UnstructuredClient) Validate(req *http.Request) (bool, []error) {
+//	if u.Validator == nil {
+//		// If no validator is configured, assume the request is valid.
+//		return true, nil
+//	}
+//	return u.Validator.ValidateRequest(req)
+//}

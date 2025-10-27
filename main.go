@@ -41,7 +41,7 @@ func main() {
 	kubeconfig := flag.String("kubeconfig", env.String("KUBECONFIG", ""),
 		"absolute path to the kubeconfig file")
 	debug := flag.Bool("debug",
-		env.Bool("REST_CONTROLLER_DEBUG", true), "dump verbose output")
+		env.Bool("REST_CONTROLLER_DEBUG", false), "dump verbose output")
 	workers := flag.Int("workers", env.Int("REST_CONTROLLER_WORKERS", 5), "number of workers")
 	resyncInterval := flag.Duration("resync-interval",
 		env.Duration("REST_CONTROLLER_RESYNC_INTERVAL", time.Minute*3), "resync interval")

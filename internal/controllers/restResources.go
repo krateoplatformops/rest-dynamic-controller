@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 
 	customcondition "github.com/krateoplatformops/rest-dynamic-controller/internal/controllers/condition"
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
@@ -253,38 +252,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			return controller.ExternalObservation{}, err
 		}
 
-		// If we reach this point, it is guaranteed that either a `get` or `findby` action was performed successfully.
-		// observeVerb will be eventually used by IsCRUpdated to find mapping fields (specific to get or findby).
-		// (if we assume they must be equal we could use just one, but maybe better to be explicit)
-		// Note: observeVerb already in place but currently not used by isCRUpdated
-		// since ResponseFieldMapping is not yet implemented.
-
-		var observeVerb *getter.VerbsDescription
-		for i, verb := range clientInfo.Resource.VerbsDescription {
-			if strings.EqualFold(verb.Action, apiaction.Get.String()) {
-				observeVerb = &clientInfo.Resource.VerbsDescription[i]
-				log.Debug("Found get action verb description", "verb", observeVerb)
-				break
-			}
-		}
-		// FindBy case (edge case, less efficient and uncommon but allowed)
-		if observeVerb == nil {
-			for i, verb := range clientInfo.Resource.VerbsDescription {
-				if strings.EqualFold(verb.Action, apiaction.FindBy.String()) {
-					observeVerb = &clientInfo.Resource.VerbsDescription[i]
-					log.Debug("Found findby action verb description", "verb", observeVerb)
-					break
-				}
-			}
-		}
-
-		if observeVerb == nil {
-			// This should not happen, as we already performed a get or findby action successfully.
-			log.Debug("Observe verb description not found")
-			return controller.ExternalObservation{}, fmt.Errorf("observe verb description not found")
-		}
-
-		res, err := isCRUpdated(mg, b, observeVerb)
+		res, err := isCRUpdated(mg, b)
 		if err != nil {
 			log.Error(err, "Checking if CR is updated")
 			return controller.ExternalObservation{}, err

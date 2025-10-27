@@ -30,6 +30,7 @@ func createTestClient(t *testing.T) *UnstructuredClient {
 	require.Empty(t, errs)
 
 	return &UnstructuredClient{
+		//Doc:       doc, // TODO: to be re-enabled when libopenapi-validation is more stable
 		DocScheme: model,
 		Server:    "https://example.com",
 	}

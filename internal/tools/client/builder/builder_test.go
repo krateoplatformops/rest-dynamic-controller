@@ -45,6 +45,13 @@ func (m *mockUnstructuredClient) ValidateRequest(method, path string, params, qu
 	return m.validateError
 }
 
+func (m *mockUnstructuredClient) Validate(req *http.Request) (bool, []error) {
+	if m.validateError != nil {
+		return false, []error{m.validateError}
+	}
+	return true, nil
+}
+
 func (m *mockUnstructuredClient) Call(ctx context.Context, cli *http.Client, path string, conf *restclient.RequestConfiguration) (restclient.Response, error) {
 	return restclient.Response{}, nil
 }
