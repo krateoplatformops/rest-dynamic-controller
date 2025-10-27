@@ -58,18 +58,6 @@ type VerbsDescription struct {
 	// RequestFieldMapping provides explicit mapping from API parameters (path, query, or body)
 	// to fields in the Custom Resource.
 	RequestFieldMapping []RequestFieldMappingItem `json:"requestFieldMapping,omitempty"`
-
-	// ResponseFieldMapping provides explicit, field-by-field mapping from the API response body
-	// to the Custom Resource's spec. This is used as an override to the default comparison logic.
-	//ResponseFieldMapping []ResponseFieldMappingItem `json:"responseFieldMapping,omitempty"`
-
-	// ResponseBodyDataPath defines the path to the nested object in the API response
-	// that contains the fields corresponding to the Custom Resource's spec.
-	// This is useful when the API response wraps the actual data in an outer object under a specific key.
-	// For example, if the response is { status : "success", "data": { "name": "...", "age": 30 } }, this should be "data".
-	// An example of a specification of this format: https://github.com/omniti-labs/jsend
-	// Another similar example: if the response is { "result": { "item": { "name": "...", "age": 30 } } }, this should be "result.item".
-	//ResponseBodyDataPath string `json:"responseBodyDataPath,omitempty"`
 }
 
 type Resource struct {
