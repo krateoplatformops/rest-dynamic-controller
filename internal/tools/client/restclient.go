@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/pathparsing"
 	rawyaml "gopkg.in/yaml.v3"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -293,12 +294,9 @@ func (u *UnstructuredClient) findItemInList(items []interface{}) (map[string]int
 // isItemMatch checks if a single item (from an API response) matches the local resource
 // by comparing all configured identifier fields.
 func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, error) {
-	// Normalize the policy string to lowercase
 	policy := strings.ToLower(u.IdentifierMatchPolicy)
-	//log.Printf("Using identifier match policy: %s", policy)
-	if policy == "" {
-		//log.Printf("No identifier match policy specified, defaulting to 'or'")
-		policy = "or" // Default to "or" if not specified
+	if policy == "" || (policy != "and" && policy != "or") {
+		policy = "or" // Default to "or" if not specified or invalid
 	}
 
 	// If no identifiers are specified, no match is possible.
@@ -310,15 +308,18 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 	case "and":
 		// AND Logic: Return false on the first failed match.
 		for _, ide := range u.IdentifierFields {
-			idepath := strings.Split(ide, ".")
+			pathSegments, err := pathparsing.ParsePath(ide)
+			if err != nil || len(pathSegments) == 0 {
+				continue
+			}
 
-			val, found, err := unstructured.NestedFieldNoCopy(itemMap, idepath...)
+			val, found, err := unstructured.NestedFieldNoCopy(itemMap, pathSegments...)
 			if err != nil || !found {
 				// If any identifier is missing, it's not an AND match.
 				return false, nil
 			}
 
-			ok, err := u.isInResource(val, idepath...)
+			ok, err := u.isInResource(val, pathSegments...)
 			if err != nil {
 				// A hard error during comparison should be propagated up.
 				return false, err
@@ -329,22 +330,25 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 			}
 		}
 
-		// If the loop completes, it means all identifiers matched.
+		// If the loop completes, it means all identifiers matched (AND logic succeeded).
 		return true, nil
 	case "or":
 		// OR Logic (default): Return true on the first successful identifier match.
 		for _, ide := range u.IdentifierFields {
-			idepath := strings.Split(ide, ".")
+			pathSegments, err := pathparsing.ParsePath(ide)
+			if err != nil || len(pathSegments) == 0 {
+				continue
+			}
 
-			val, found, err := unstructured.NestedFieldNoCopy(itemMap, idepath...)
+			val, found, err := unstructured.NestedFieldNoCopy(itemMap, pathSegments...)
 			if err != nil || !found {
 				// If field is not found or there is an error, it's not a match for this identifier, so we continue.
 				continue
 			}
 
-			ok, err := u.isInResource(val, idepath...)
+			ok, err := u.isInResource(val, pathSegments...)
 			if err != nil {
-				// A hard error during comparison should be propagated up.
+				// A hard error during comparison should be propagated up. // TODO: is this the desired behavior for OR logic?
 				return false, err
 			}
 
@@ -354,7 +358,7 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 			}
 		}
 
-		// If the loop completes, no identifiers matched.
+		// If the loop completes, no identifiers matched (OR logic failed).
 		return false, nil
 	default:
 		return false, fmt.Errorf("unknown identifier match policy: %s", u.IdentifierMatchPolicy)

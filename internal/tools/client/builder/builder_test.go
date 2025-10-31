@@ -201,6 +201,11 @@ func TestBuildCallConfig(t *testing.T) {
 			"spec": map[string]interface{}{
 				"filter": "test",
 				"name":   "testname",
+				"nested": map[string]interface{}{
+					"field1": "value1",
+					"field2": "value2",
+				},
+				"root.level.with.dots": "dotvalue_original",
 			},
 		},
 	}
@@ -356,7 +361,7 @@ func TestBuildCallConfig(t *testing.T) {
 			expectedQuery:  map[string]string{},
 			expectedBody: map[string]interface{}{
 				"instanceName": "my-instance",
-				"cores":        4,
+				"cores":        int64(4),
 			},
 		},
 		{
@@ -424,6 +429,62 @@ func TestBuildCallConfig(t *testing.T) {
 			},
 			expectedQuery: map[string]string{},
 			expectedBody:  map[string]interface{}{},
+		},
+		{
+			name: "Nested body mapping",
+			callInfo: &CallInfo{
+				ReqParams: &RequestedParams{
+					Body: text.NewStringSet("nested"),
+				},
+				RequestFieldMapping: []getter.RequestFieldMappingItem{
+					{
+						InBody:           "nested.field1",
+						InCustomResource: "spec.nested.field1",
+					},
+					{
+						InBody:           "nested.field2",
+						InCustomResource: "spec.nested.field2",
+					},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"nested": map[string]interface{}{
+							"field1": "value1",
+							"field2": "value2",
+						},
+					},
+				},
+			},
+			expectedParams: map[string]string{},
+			expectedQuery:  map[string]string{},
+			expectedBody: map[string]interface{}{
+				"nested": map[string]interface{}{
+					"field1": "value1",
+					"field2": "value2",
+				},
+			},
+		},
+		{
+			name: "Dot literals in field name of spec",
+			callInfo: &CallInfo{
+				ReqParams: &RequestedParams{
+					Body: text.NewStringSet("dotfield.in.body"),
+				},
+				RequestFieldMapping: []getter.RequestFieldMappingItem{
+					{
+						InBody:           "['dotfield.in.body']",
+						InCustomResource: "spec.['root.level.with.dots']",
+					},
+				},
+			},
+			mg:             baseMg,
+			expectedParams: map[string]string{},
+			expectedQuery:  map[string]string{},
+			expectedBody: map[string]interface{}{
+				"dotfield.in.body": "dotvalue_original",
+			},
 		},
 	}
 
@@ -887,7 +948,7 @@ func TestApplyRequestFieldMapping(t *testing.T) {
 			},
 			expectedMapBody: map[string]interface{}{
 				"itemName":  "my-item",
-				"itemValue": 100,
+				"itemValue": int64(100),
 			},
 		},
 		{
@@ -1004,6 +1065,69 @@ func TestApplyRequestFieldMapping(t *testing.T) {
 				Query:      make(map[string]string),
 			},
 			expectedMapBody: map[string]interface{}{"name": "new-name"},
+		},
+		{
+			name: "Nested in body mapping",
+			callInfo: &CallInfo{
+				RequestFieldMapping: []getter.RequestFieldMappingItem{
+					{InBody: "metadata.owner", InCustomResource: "spec.owner"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"owner": "team-a",
+					},
+				},
+			},
+			initialReqConfig: &restclient.RequestConfiguration{
+				Parameters: make(map[string]string),
+				Query:      make(map[string]string),
+			},
+			initialMapBody: make(map[string]interface{}),
+			expectedReqConfig: &restclient.RequestConfiguration{
+				Parameters: make(map[string]string),
+				Query:      make(map[string]string),
+			},
+			expectedMapBody: map[string]interface{}{
+				"metadata": map[string]interface{}{
+					"owner": "team-a",
+				},
+			},
+		},
+		{
+			name: "Dot literals in field names",
+			callInfo: &CallInfo{
+				RequestFieldMapping: []getter.RequestFieldMappingItem{
+					{InBody: "req_body_root.['dot.field.in.body']", InCustomResource: "spec.first_level_field.['level.with.dots']"},
+					{InPath: "['path_parameter.with.dots']", InCustomResource: "spec.first_level_field.['level.with.dots']"},
+					{InQuery: "['query_parameter.with.dots']", InCustomResource: "spec.['another.field.with.dots']"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"first_level_field": map[string]interface{}{
+							"level.with.dots": "dotvalue",
+						},
+						"another.field.with.dots": "othervalue",
+					},
+				},
+			},
+			initialReqConfig: &restclient.RequestConfiguration{
+				Parameters: make(map[string]string),
+				Query:      make(map[string]string),
+			},
+			initialMapBody: make(map[string]interface{}),
+			expectedReqConfig: &restclient.RequestConfiguration{
+				Parameters: map[string]string{"path_parameter.with.dots": "dotvalue"},
+				Query:      map[string]string{"query_parameter.with.dots": "othervalue"},
+			},
+			expectedMapBody: map[string]interface{}{
+				"req_body_root": map[string]interface{}{
+					"dot.field.in.body": "dotvalue",
+				},
+			},
 		},
 	}
 
