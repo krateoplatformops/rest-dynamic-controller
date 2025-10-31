@@ -2,9 +2,9 @@ package restResources
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/comparison"
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/deepcopy"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/pathparsing"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
@@ -74,7 +74,7 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 		}
 
 		// Perform deep copy and type conversions (e.g., float64 to int64).
-		convertedValue := deepCopyJSONValue(value)
+		convertedValue := deepcopy.DeepCopyJSONValue(value)
 
 		// The destination path in the status should mirror the source path.
 		statusPath := append([]string{"status"}, pathSegments...)
@@ -83,57 +83,4 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 		}
 	}
 	return nil
-}
-
-// Note: forked from plumbing/maps/deepcopy.go
-// modified the float handling
-func deepCopyJSONValue(x any) any {
-	switch x := x.(type) {
-	case map[string]any:
-		if x == nil {
-			// Typed nil - an any that contains a type map[string]any with a value of nil
-			return x
-		}
-		clone := make(map[string]any, len(x))
-		for k, v := range x {
-			clone[k] = deepCopyJSONValue(v)
-		}
-		return clone
-	case []any:
-		if x == nil {
-			// Typed nil - an any that contains a type []any with a value of nil
-			return x
-		}
-		clone := make([]any, len(x))
-		for i, v := range x {
-			clone[i] = deepCopyJSONValue(v)
-		}
-		return clone
-	case []map[string]any:
-		if x == nil {
-			return x
-		}
-		clone := make([]any, len(x))
-		for i, v := range x {
-			clone[i] = deepCopyJSONValue(v)
-		}
-		return clone
-	case string, int64, bool, nil:
-		return x
-	case int:
-		return int64(x)
-	case int32:
-		return int64(x)
-	case float32:
-		if x >= math.MinInt64 && x <= math.MaxInt64 {
-			return int64(x)
-		}
-	case float64:
-		if x >= math.MinInt64 && x <= math.MaxInt64 {
-			return int64(x)
-		}
-	default:
-		return fmt.Sprintf("%v", x)
-	}
-	return fmt.Sprintf("%v", x) // Fallback for unsupported types
 }

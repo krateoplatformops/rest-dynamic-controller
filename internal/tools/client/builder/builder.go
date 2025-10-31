@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"strings"
 
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/deepcopy"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/pathparsing"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
@@ -201,7 +201,7 @@ func applyRequestFieldMapping(callInfo *CallInfo, mg *unstructured.Unstructured,
 			// Perform deep copy and type conversions (e.g., float64 to int64).
 			// This is needed since we will set the value in the body map and therefore we need to ensure the types are correct.
 			// On the other hand, for path and query parameters we convert everything to string.
-			convertedValue := deepCopyJSONValue(val)
+			convertedValue := deepcopy.DeepCopyJSONValue(val)
 
 			// print map body before setting the value
 			for k, v := range mapBody {
@@ -298,57 +298,4 @@ func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfigu
 			}
 		}
 	}
-}
-
-// Note: forked from plumbing/maps/deepcopy.go
-// modified the float handling
-func deepCopyJSONValue(x any) any {
-	switch x := x.(type) {
-	case map[string]any:
-		if x == nil {
-			// Typed nil - an any that contains a type map[string]any with a value of nil
-			return x
-		}
-		clone := make(map[string]any, len(x))
-		for k, v := range x {
-			clone[k] = deepCopyJSONValue(v)
-		}
-		return clone
-	case []any:
-		if x == nil {
-			// Typed nil - an any that contains a type []any with a value of nil
-			return x
-		}
-		clone := make([]any, len(x))
-		for i, v := range x {
-			clone[i] = deepCopyJSONValue(v)
-		}
-		return clone
-	case []map[string]any:
-		if x == nil {
-			return x
-		}
-		clone := make([]any, len(x))
-		for i, v := range x {
-			clone[i] = deepCopyJSONValue(v)
-		}
-		return clone
-	case string, int64, bool, nil:
-		return x
-	case int:
-		return int64(x)
-	case int32:
-		return int64(x)
-	case float32:
-		if x >= math.MinInt64 && x <= math.MaxInt64 {
-			return int64(x)
-		}
-	case float64:
-		if x >= math.MinInt64 && x <= math.MaxInt64 {
-			return int64(x)
-		}
-	default:
-		return fmt.Sprintf("%v", x)
-	}
-	return fmt.Sprintf("%v", x) // Fallback for unsupported types
 }
