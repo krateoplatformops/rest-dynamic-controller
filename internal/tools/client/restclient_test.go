@@ -1012,6 +1012,34 @@ func TestIsItemMatch(t *testing.T) {
 			itemMap:   map[string]interface{}{"name": "test-svc", "ports": []interface{}{443, 80}}, // Order is different
 			wantMatch: false,                                                                       // DeepEqual for slices is order-sensitive
 		},
+		{
+			name: "Literal dots in identifier fields",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "OR",
+				IdentifierFields:      []string{"['field.with.dots']"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"field.with.dots": "value1",
+					},
+				}},
+			},
+			itemMap:   map[string]interface{}{"field.with.dots": "value1"},
+			wantMatch: true,
+		},
+		{
+			name: "Literal dots in identifier fields - no match (different value)",
+			client: &UnstructuredClient{
+				IdentifierMatchPolicy: "OR",
+				IdentifierFields:      []string{"['field.with.dots']"},
+				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"field.with.dots": "value1",
+					},
+				}},
+			},
+			itemMap:   map[string]interface{}{"field.with.dots": "value2"},
+			wantMatch: false,
+		},
 	}
 
 	for _, tt := range tests {

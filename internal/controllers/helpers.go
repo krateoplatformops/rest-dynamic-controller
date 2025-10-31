@@ -3,10 +3,10 @@ package restResources
 import (
 	"fmt"
 	"math"
-	"strings"
 
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/comparison"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/pathparsing"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -59,34 +59,29 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 	}
 
 	for _, fieldName := range allFields {
-		//log.Printf("Managing field: %s", fieldName)
-		// Split the field name by '.' to handle nested paths.
-		path := strings.Split(fieldName, ".")
-		//log.Printf("Field path split: %v", path)
+		// Parse the field name into path segments.
+		pathSegments, err := pathparsing.ParsePath(fieldName)
+		if err != nil || len(pathSegments) == 0 {
+			continue
+		}
 
 		// Extract the raw value from the response body without copying.
-		value, found, err := unstructured.NestedFieldNoCopy(body, path...)
+		value, found, err := unstructured.NestedFieldNoCopy(body, pathSegments...)
 		if err != nil || !found {
 			// An error here means the path was invalid or not found.
 			// We can safely continue to the next field.
-			//log.Printf("Field '%s' not found in response body or error occurred: %v", fieldName, err)
 			continue
 		}
-		//log.Printf("Extracted value for field '%s': %v", fieldName, value)
 
 		// Perform deep copy and type conversions (e.g., float64 to int64).
 		convertedValue := deepCopyJSONValue(value)
-		//log.Printf("Converted value for field '%s': %v", fieldName, convertedValue)
 
 		// The destination path in the status should mirror the source path.
-		statusPath := append([]string{"status"}, path...)
-		//log.Printf("Setting value for field '%s' at status path: %v", fieldName, statusPath)
+		statusPath := append([]string{"status"}, pathSegments...)
 		if err := unstructured.SetNestedField(mg.Object, convertedValue, statusPath...); err != nil {
 			return fmt.Errorf("setting nested field '%s' in status: %w", fieldName, err)
 		}
-		//log.Printf("Successfully set field '%s' with value: %v at path: %v", fieldName, convertedValue, statusPath)
 	}
-
 	return nil
 }
 

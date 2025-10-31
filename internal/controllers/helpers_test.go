@@ -757,6 +757,37 @@ func TestPopulateStatusFields(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "literal dots in field names",
+			clientInfo: &getter.Info{
+				Resource: getter.Resource{
+					AdditionalStatusFields: []string{"root_level.['nested.field.with.dots'].leaf"},
+					Identifiers:            []string{"root_level.['another.field.with.dots']"},
+				},
+			},
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{},
+			},
+			body: map[string]interface{}{
+				"root_level": map[string]interface{}{
+					"nested.field.with.dots": map[string]interface{}{
+						"leaf": "final_value",
+					},
+					"another.field.with.dots": "identifier_value",
+				},
+			},
+			wantErr: false,
+			expected: map[string]interface{}{
+				"status": map[string]interface{}{
+					"root_level": map[string]interface{}{
+						"nested.field.with.dots": map[string]interface{}{
+							"leaf": "final_value",
+						},
+						"another.field.with.dots": "identifier_value",
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {

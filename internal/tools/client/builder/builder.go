@@ -3,12 +3,15 @@ package builder
 import (
 	"context"
 	"fmt"
+	"log"
+	"math"
 	"net/http"
 	"strings"
 
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/pathparsing"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/text"
@@ -119,6 +122,8 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSp
 
 	reqConfiguration.Body = mapBody
 
+	log.Printf("[BuildCallConfig] reqConfiguration: %v\n", reqConfiguration)
+
 	return reqConfiguration
 }
 
@@ -126,42 +131,94 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSp
 func applyRequestFieldMapping(callInfo *CallInfo, mg *unstructured.Unstructured, reqConfiguration *restclient.RequestConfiguration, mapBody map[string]interface{}) {
 
 	if callInfo.RequestFieldMapping == nil {
-		//log.Printf("No RequestFieldMapping defined for action %s\n", callInfo.Action.String())
 		return
 	}
 
 	for _, mapping := range callInfo.RequestFieldMapping {
-		pathParts := strings.Split(mapping.InCustomResource, ".")
-		if len(pathParts) == 0 {
+		pathSegments, err := pathparsing.ParsePath(mapping.InCustomResource)
+		if len(pathSegments) == 0 {
 			continue
 		}
 
-		val, found, err := unstructured.NestedFieldNoCopy(mg.Object, pathParts...)
-		if err != nil {
-			//log.Printf("Error retrieving field %s from custom resource to be used in RequestFieldMapping: %s\n", mapping.InCustomResource, err)
-			continue
-		}
-		if !found {
-			//log.Printf("Field %s not found in custom resource to be used in RequestFieldMapping\n", mapping.InCustomResource)
+		log.Printf("Path segments for InCustomResource %s: %v\n", mapping.InCustomResource, pathSegments)
+
+		val, found, err := unstructured.NestedFieldNoCopy(mg.Object, pathSegments...)
+		if err != nil || !found {
 			continue
 		}
 
-		//log.Printf("Processing RequestFieldMapping: custom resource field %s with value %v\n", mapping.InCustomResource, val)
+		log.Printf("Value for InCustomResource %s: %v\n", mapping.InCustomResource, val)
 
 		if mapping.InPath != "" {
-			//log.Printf("Mapping to path parameter %s\n", mapping.InPath)
+			// parse InPath with pathparsing to be consistent with dot notation handling
+			inPathSegments, err := pathparsing.ParsePath(mapping.InPath)
+			if err != nil || len(inPathSegments) == 0 {
+				log.Printf("Error parsing InPath %s: %s\n", mapping.InPath, err)
+				continue
+			}
+
+			// it should be a single segment for path parameters since path parameters are flat
+			if len(inPathSegments) != 1 {
+				log.Printf("InPath %s has multiple segments after parsing, expected a single segment for path parameters\n", mapping.InPath)
+				continue
+			}
+
+			mapping.InPath = inPathSegments[0]
 			strVal := fmt.Sprintf("%v", val)
 			reqConfiguration.Parameters[mapping.InPath] = strVal
-			//log.Printf("Added mapping field %s to path parameter %s with value %s\n", mapping.InCustomResource, mapping.InPath, strVal)
+
 		} else if mapping.InQuery != "" {
-			//log.Printf("Mapping to query parameter %s\n", mapping.InQuery)
+			// parse InQuery with pathparsing to be consistent with dot notation handling
+			inQuerySegments, err := pathparsing.ParsePath(mapping.InQuery)
+			if err != nil || len(inQuerySegments) == 0 {
+				log.Printf("Error parsing InQuery %s: %s\n", mapping.InQuery, err)
+				continue
+			}
+
+			// it should be a single segment for query parameters since query parameters are flat
+			if len(inQuerySegments) != 1 {
+				log.Printf("InQuery %s has multiple segments after parsing, expected a single segment for query parameters\n", mapping.InQuery)
+				continue
+			}
+
+			mapping.InQuery = inQuerySegments[0]
 			strVal := fmt.Sprintf("%v", val)
 			reqConfiguration.Query[mapping.InQuery] = strVal
-			//log.Printf("Added mapping field %s to query parameter %s with value %s\n", mapping.InCustomResource, mapping.InQuery, strVal)
+
 		} else if mapping.InBody != "" {
-			//log.Printf("Mapping to body field %s\n", mapping.InBody)
-			mapBody[mapping.InBody] = val
-			//log.Printf("Added mapping field %s to body field %s with value %v\n", mapping.InCustomResource, mapping.InBody, val)
+
+			log.Printf("Processing InBody mapping")
+
+			// parse InBody with pathparsing to be consistent with dot notation handling
+			inBodySegments, err := pathparsing.ParsePath(mapping.InBody)
+			if err != nil || len(inBodySegments) == 0 {
+				log.Printf("Error parsing InBody %s: %s\n", mapping.InBody, err)
+				continue
+			}
+
+			log.Printf("InBody segments: %v\n", inBodySegments)
+
+			// Perform deep copy and type conversions (e.g., float64 to int64).
+			// This is needed since we will set the value in the body map and therefore we need to ensure the types are correct.
+			// On the other hand, for path and query parameters we convert everything to string.
+			convertedValue := deepCopyJSONValue(val)
+
+			// print map body before setting the value
+			for k, v := range mapBody {
+				log.Printf("Before setting, mapBody key: %s, value: %v\n", k, v)
+			}
+
+			// Set the value in the body map at the correct nested path
+			err = unstructured.SetNestedField(mapBody, convertedValue, inBodySegments...)
+			if err != nil {
+				log.Printf("Error setting body field %s to value %v: %s\n", mapping.InBody, convertedValue, err)
+				continue
+			}
+
+			// print map body
+			for k, v := range mapBody {
+				log.Printf("mapBody key: %s, value: %v\n", k, v)
+			}
 		}
 	}
 }
@@ -172,16 +229,12 @@ func applyConfigSpec(req *restclient.RequestConfiguration, configSpec map[string
 		return
 	}
 
-	//fmt.Printf("Applying config spec for action: %s\n", action)
-	//fmt.Printf("Config spec content: %v\n", configSpec)
-
 	// Internal helper to avoid repetition
 	process := func(key string, dest map[string]string) {
 		if actionConfig, found, err := unstructured.NestedMap(configSpec, key, action); err == nil && found && actionConfig != nil {
 			for k, v := range actionConfig {
 				stringVal := fmt.Sprintf("%v", v) // Convert any type to string
 				dest[k] = stringVal
-				//fmt.Printf("%s param set from config spec: %s=%s\n", key, k, stringVal)
 			}
 		}
 	}
@@ -245,4 +298,57 @@ func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfigu
 			}
 		}
 	}
+}
+
+// Note: forked from plumbing/maps/deepcopy.go
+// modified the float handling
+func deepCopyJSONValue(x any) any {
+	switch x := x.(type) {
+	case map[string]any:
+		if x == nil {
+			// Typed nil - an any that contains a type map[string]any with a value of nil
+			return x
+		}
+		clone := make(map[string]any, len(x))
+		for k, v := range x {
+			clone[k] = deepCopyJSONValue(v)
+		}
+		return clone
+	case []any:
+		if x == nil {
+			// Typed nil - an any that contains a type []any with a value of nil
+			return x
+		}
+		clone := make([]any, len(x))
+		for i, v := range x {
+			clone[i] = deepCopyJSONValue(v)
+		}
+		return clone
+	case []map[string]any:
+		if x == nil {
+			return x
+		}
+		clone := make([]any, len(x))
+		for i, v := range x {
+			clone[i] = deepCopyJSONValue(v)
+		}
+		return clone
+	case string, int64, bool, nil:
+		return x
+	case int:
+		return int64(x)
+	case int32:
+		return int64(x)
+	case float32:
+		if x >= math.MinInt64 && x <= math.MaxInt64 {
+			return int64(x)
+		}
+	case float64:
+		if x >= math.MinInt64 && x <= math.MaxInt64 {
+			return int64(x)
+		}
+	default:
+		return fmt.Sprintf("%v", x)
+	}
+	return fmt.Sprintf("%v", x) // Fallback for unsupported types
 }
