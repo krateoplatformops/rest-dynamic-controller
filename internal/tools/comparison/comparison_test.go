@@ -71,7 +71,7 @@ func TestCompareAny(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := compareAny(tt.a, tt.b)
+			result := CompareAny(tt.a, tt.b)
 			if tt.expectError {
 				t.Error("expected error but got none")
 			}
@@ -158,6 +158,17 @@ func TestCompareExisting(t *testing.T) {
 			},
 			rm: map[string]interface{}{
 				"slice": []interface{}{"a", "b", "d"},
+			},
+			expected:    false,
+			expectError: false,
+		},
+		{
+			name: "slices with same strings in different order",
+			mg: map[string]interface{}{
+				"slice": []interface{}{"a", "b", "c"},
+			},
+			rm: map[string]interface{}{
+				"slice": []interface{}{"c", "b", "a"},
 			},
 			expected:    false,
 			expectError: false,
@@ -628,7 +639,7 @@ func TestCompareAny_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := compareAny(tt.a, tt.b)
+			result := CompareAny(tt.a, tt.b)
 			if result != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, result)
 			}
@@ -693,7 +704,6 @@ func TestDeepEqual(t *testing.T) {
 		{name: "unequal int slices (content)", a: []int{1, 2, 3}, b: []int{1, 2, 4}, want: false},
 		{name: "unequal int slices (order)", a: []int{1, 2, 3}, b: []int{3, 2, 1}, want: false},
 		{name: "equal interface slices", a: []interface{}{1, "a"}, b: []interface{}{1, "a"}, want: true},
-		// This case is expected to FAIL with the current DeepEqual implementation, demonstrating its limitation.
 		{name: "int vs float in slices", a: []interface{}{1, "a"}, b: []interface{}{1.0, "a"}, want: false},
 
 		// Maps (will use direct cmp.Equal)
@@ -701,7 +711,6 @@ func TestDeepEqual(t *testing.T) {
 		{name: "equal maps (different key order)", a: map[string]int{"a": 1, "b": 2}, b: map[string]int{"b": 2, "a": 1}, want: true},
 		{name: "unequal maps (value)", a: map[string]int{"a": 1}, b: map[string]int{"a": 2}, want: false},
 		{name: "unequal maps (key)", a: map[string]int{"a": 1}, b: map[string]int{"c": 1}, want: false},
-		// This case is expected to FAIL with the current DeepEqual implementation, demonstrating its limitation.
 		{name: "int vs float in maps", a: map[string]interface{}{"a": 1}, b: map[string]interface{}{"a": 1.0}, want: false},
 
 		// Nested Structures (will use direct cmp.Equal)

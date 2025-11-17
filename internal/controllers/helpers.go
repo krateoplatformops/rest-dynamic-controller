@@ -2,6 +2,7 @@ package restResources
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/comparison"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/deepcopy"
@@ -24,6 +25,14 @@ func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (comp
 
 	// Extract the "spec" fields from the mg object
 	m, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
+
+	log.Print("isCRUpdated - comparing mg spec with rm")
+	// print the mg spec for debugging
+	log.Print("mg spec fields:")
+	for k, v := range m {
+		log.Printf("mg spec field: %s = %v", k, v)
+	}
+
 	if err != nil {
 		return comparison.ComparisonResult{
 			IsEqual: false,
@@ -31,6 +40,11 @@ func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (comp
 				Reason: "getting spec fields",
 			},
 		}, fmt.Errorf("getting spec fields: %w", err)
+	}
+
+	log.Print("rm fields:")
+	for k, v := range rm {
+		log.Printf("rm field: %s = %v", k, v)
 	}
 
 	return comparison.CompareExisting(m, rm)
@@ -65,7 +79,7 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 			continue
 		}
 
-		// Extract the raw value from the response body without copying.
+		// Extract the raw value from the response body.
 		value, found, err := unstructured.NestedFieldNoCopy(body, pathSegments...)
 		if err != nil || !found {
 			// An error here means the path was invalid or not found.

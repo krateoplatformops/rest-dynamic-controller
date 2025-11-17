@@ -107,11 +107,17 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSp
 
 	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 	if err != nil {
-		specFields = make(map[string]interface{}) // Initialize as empty map
+		specFields = make(map[string]interface{}) // Initialize as empty map if error when retrieving spec
 	}
+
+	log.Printf("Spec fields retrieved from unstructured:\n")
+	for k, v := range specFields {
+		log.Printf("Spec field key: %s, value: %v\n", k, v)
+	}
+
 	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
 	if err != nil {
-		statusFields = make(map[string]interface{}) // Initialize as empty map
+		statusFields = make(map[string]interface{}) // Initialize as empty map if error when retrieving status
 	}
 
 	// 3. Apply values from the main resource's spec (spec takes precedence over status in case of duplicates).
@@ -271,6 +277,7 @@ func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *get
 }
 
 func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfiguration *restclient.RequestConfiguration, mapBody map[string]interface{}) {
+	log.Print("Inside processFields")
 	for field, value := range fields {
 		if field == "" {
 			continue
@@ -290,11 +297,12 @@ func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfigu
 
 		// Note: probably headers and cookies are better to be set ONLY in the Configuration CR spec
 		// (and currently it is only possible there)
-		// Therefore, we do not set them here since we are processing only the main resource fields
+		// Therefore, we do not set them here since we are processing only the main resource fields (spec/status) with this function.
 
 		if callInfo.ReqParams.Body.Contains(field) {
 			if mapBody[field] == nil {
 				mapBody[field] = value
+				log.Printf("Setting body field %s to value %v\n", field, value)
 			}
 		}
 	}

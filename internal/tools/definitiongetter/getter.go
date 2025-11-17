@@ -15,6 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
+
+	"log"
 )
 
 // RequestFieldMappingItem defines a single mapping from a path parameter, query parameter or body field
@@ -54,10 +56,15 @@ type VerbsDescription struct {
 	Method string `json:"method"`
 	// Path: the path to the api
 	Path string `json:"path"`
-
 	// RequestFieldMapping provides explicit mapping from API parameters (path, query, or body)
 	// to fields in the Custom Resource.
 	RequestFieldMapping []RequestFieldMappingItem `json:"requestFieldMapping,omitempty"`
+	// IdentifiersMatchPolicy defines how to match identifiers for the 'findby' action. To be set only for 'findby' actions.
+	// If not set, defaults to 'OR'.
+	// Possible values are 'AND' or 'OR'.
+	// - 'AND': all identifiers must match.
+	// - 'OR': at least one identifier must match (the default behavior).
+	IdentifiersMatchPolicy string `json:"identifiersMatchPolicy,omitempty"`
 }
 
 type Resource struct {
@@ -205,6 +212,11 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 				Resource: resource,
 			}
 
+			log.Printf("Found definition for '%v' in namespace: %s", gvr, un.GetNamespace())
+			// print info as json for debugging
+			infoJson, _ := json.MarshalIndent(info, "", "  ")
+			log.Printf("Definition info: %s", string(infoJson))
+
 			err = g.processConfigurationRef(un, info)
 			if err != nil {
 				return nil, err
@@ -225,7 +237,6 @@ func (g *dynamicGetter) processConfigurationRef(un *unstructured.Unstructured, i
 		return fmt.Errorf("getting spec.configurationRef for resource of kind '%v' in namespace: %s", un.GetKind(), un.GetNamespace())
 	}
 	if !ok {
-		//log.Printf("No configurationRef found for resource of kind '%v' in namespace: %s\n", un.GetKind(), un.GetNamespace())
 		return nil // No auth or configuration defined
 	}
 
@@ -255,8 +266,6 @@ func (g *dynamicGetter) processConfigurationRef(un *unstructured.Unstructured, i
 		return err
 	}
 	if ok {
-		//fmt.Printf("Found configuration spec for '%v' in namespace: %s\n", un.GetKind(), un.GetNamespace())
-		//fmt.Printf("Configuration spec: %v\n", configSpec)
 		info.ConfigurationSpec = configSpec
 	}
 
@@ -267,8 +276,6 @@ func (g *dynamicGetter) processConfigurationRef(un *unstructured.Unstructured, i
 	if !ok {
 		return nil // No auth methods defined
 	}
-	//fmt.Printf("Found authentication methods for '%v' in namespace: %s\n", un.GetKind(), un.GetNamespace())
-	//fmt.Printf("Authentication methods: %v\n", authMethods)
 
 	return parseAuthentication(authMethods, g.dynamicClient, info)
 }

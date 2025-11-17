@@ -563,6 +563,129 @@ func TestFindBy(t *testing.T) {
 			mg:               map[string]interface{}{"spec": map[string]interface{}{"id": 456}},
 			expected:         map[string]interface{}{"id": 456, "name": "item2"},
 		},
+		{
+			name: "object as identifier value",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"items": []interface{}{
+						map[string]interface{}{"id": map[string]interface{}{"part1": "a", "part2": "b"}, "name": "item1"},
+						map[string]interface{}{"id": map[string]interface{}{"part1": "a", "part2": "d"}, "name": "item2"},
+					},
+				})
+			},
+			path: "/api/test",
+			opts: &RequestConfiguration{
+				Method: "GET",
+			},
+			identifierFields: []string{"id"},
+			mg:               map[string]interface{}{"spec": map[string]interface{}{"id": map[string]interface{}{"part1": "a", "part2": "d"}}},
+			expected:         map[string]interface{}{"id": map[string]interface{}{"part1": "a", "part2": "d"}, "name": "item2"},
+		},
+		{
+			name: "object as identifier value with nested fields",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"items": []interface{}{
+						map[string]interface{}{
+							"id":   "policy-1",
+							"name": "PolicyConfig1",
+							"settings": map[string]interface{}{
+								"addedFilesOnly":       true,
+								"creatorVoteCounts":    true,
+								"minimumApproverCount": 1,
+								"filenamePatterns":     []interface{}{"**/*.go", "**/*.md"},
+								"requiredReviewerIds":  []interface{}{"32915def-23aa-609f-b91d-9a8d94384aa2"},
+								"scope": []interface{}{
+									map[string]interface{}{
+										"repositoryId": nil,
+										"refName":      "refs/heads/main",
+										"matchKind":    "Exact",
+									},
+									map[string]interface{}{
+										"repositoryId": nil,
+										"refName":      "refs/heads/release/*",
+										"matchKind":    "Prefix",
+									},
+								},
+							},
+						},
+						map[string]interface{}{
+							"id":   "policy-2",
+							"name": "PolicyConfig2",
+							"settings": map[string]interface{}{
+								"addedFilesOnly":       true,
+								"creatorVoteCounts":    true,
+								"minimumApproverCount": 1,
+								"filenamePatterns":     []interface{}{"**/*.go", "**/*.md"},
+								"requiredReviewerIds":  []interface{}{"32915def-23aa-609f-b91d-9a8d94384aa2"},
+								"scope": []interface{}{
+									map[string]interface{}{
+										"repositoryId": nil,
+										"refName":      "refs/heads/release/*",
+										"matchKind":    "Prefix",
+									},
+								},
+							},
+						},
+					},
+				})
+			},
+			path: "/api/test",
+			opts: &RequestConfiguration{
+				Method: "GET",
+			},
+			identifierFields: []string{"settings"},
+			mg: map[string]interface{}{
+				"spec": map[string]interface{}{
+					"settings": map[string]interface{}{
+						"addedFilesOnly":       true,
+						"creatorVoteCounts":    true,
+						"minimumApproverCount": 1,
+						"filenamePatterns":     []interface{}{"**/*.go", "**/*.md"},
+						"requiredReviewerIds":  []interface{}{"32915def-23aa-609f-b91d-9a8d94384aa2"},
+						"scope": []interface{}{
+							map[string]interface{}{
+								"repositoryId": nil,
+								"refName":      "refs/heads/main",
+								"matchKind":    "Exact",
+							},
+							map[string]interface{}{
+								"repositoryId": nil,
+								"refName":      "refs/heads/release/*",
+								"matchKind":    "Prefix",
+							},
+						},
+					},
+				},
+			},
+			expected: map[string]interface{}{
+				"id":   "policy-1",
+				"name": "PolicyConfig1",
+				"settings": map[string]interface{}{
+					"addedFilesOnly":       true,
+					"creatorVoteCounts":    true,
+					"minimumApproverCount": 1,
+					"filenamePatterns":     []interface{}{"**/*.go", "**/*.md"},
+					"requiredReviewerIds":  []interface{}{"32915def-23aa-609f-b91d-9a8d94384aa2"},
+					"scope": []interface{}{
+						map[string]interface{}{
+							"repositoryId": nil,
+							"refName":      "refs/heads/main",
+							"matchKind":    "Exact",
+						},
+						map[string]interface{}{
+							"repositoryId": nil,
+							"refName":      "refs/heads/release/*",
+							"matchKind":    "Prefix",
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -841,8 +964,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "AND policy, all identifiers match",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "AND",
-				IdentifierFields:      []string{"name", "region"},
+				IdentifiersMatchPolicy: "AND",
+				IdentifierFields:       []string{"name", "region"},
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{"name": "test-vm", "region": "us-east-1"},
 				}},
@@ -853,8 +976,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "AND policy, one identifier does not match",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "AND",
-				IdentifierFields:      []string{"name", "region"},
+				IdentifiersMatchPolicy: "AND",
+				IdentifierFields:       []string{"name", "region"},
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{"name": "test-vm", "region": "us-east-1"},
 				}},
@@ -865,8 +988,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "AND policy, one identifier is missing from item",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "AND",
-				IdentifierFields:      []string{"name", "region"},
+				IdentifiersMatchPolicy: "AND",
+				IdentifierFields:       []string{"name", "region"},
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{"name": "test-vm", "region": "us-east-1"},
 				}},
@@ -879,8 +1002,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "OR policy, first identifier matches",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "OR",
-				IdentifierFields:      []string{"name", "id"},
+				IdentifiersMatchPolicy: "OR",
+				IdentifierFields:       []string{"name", "id"},
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{"name": "test-vm", "id": "vm-stale"},
 				}},
@@ -891,8 +1014,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "OR policy, second identifier matches",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "OR",
-				IdentifierFields:      []string{"name", "id"},
+				IdentifiersMatchPolicy: "OR",
+				IdentifierFields:       []string{"name", "id"},
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{"name": "stale-name", "id": "vm-123"},
 				}},
@@ -903,8 +1026,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "OR policy, no identifiers match",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "OR",
-				IdentifierFields:      []string{"name", "id"},
+				IdentifiersMatchPolicy: "OR",
+				IdentifierFields:       []string{"name", "id"},
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{"name": "stale-name", "id": "vm-stale"},
 				}},
@@ -917,9 +1040,9 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "No identifiers specified",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "AND",
-				IdentifierFields:      []string{},
-				Resource:              &unstructured.Unstructured{Object: map[string]interface{}{}},
+				IdentifiersMatchPolicy: "AND",
+				IdentifierFields:       []string{},
+				Resource:               &unstructured.Unstructured{Object: map[string]interface{}{}},
 			},
 			itemMap:   map[string]interface{}{"name": "test-vm"},
 			wantMatch: false,
@@ -927,8 +1050,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "Default policy (empty) is OR, match succeeds on partial match",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "", // Default should be OR
-				IdentifierFields:      []string{"name", "region"},
+				IdentifiersMatchPolicy: "", // Default should be OR
+				IdentifierFields:       []string{"name", "region"},
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{"name": "test-vm", "region": "us-east-1"},
 				}},
@@ -939,8 +1062,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "AND policy explicitly set, match fails on partial match",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "And",
-				IdentifierFields:      []string{"name", "region"},
+				IdentifiersMatchPolicy: "And",
+				IdentifierFields:       []string{"name", "region"},
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{"name": "test-vm", "region": "us-east-1"},
 				}},
@@ -953,8 +1076,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "AND policy, nested object identifier matches",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "AND",
-				IdentifierFields:      []string{"metadata.labels"},
+				IdentifiersMatchPolicy: "AND",
+				IdentifierFields:       []string{"metadata.labels"},
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{"metadata": map[string]interface{}{
 						"labels": map[string]string{"app": "database", "tier": "backend"},
@@ -969,8 +1092,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "AND policy, nested object identifier fails",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "AND",
-				IdentifierFields:      []string{"metadata.labels"},
+				IdentifiersMatchPolicy: "AND",
+				IdentifierFields:       []string{"metadata.labels"},
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{"metadata": map[string]interface{}{
 						"labels": map[string]string{"app": "database", "tier": "backend"},
@@ -985,8 +1108,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "OR policy, array identifier matches",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "OR",
-				IdentifierFields:      []string{"ports", "name"},
+				IdentifiersMatchPolicy: "OR",
+				IdentifierFields:       []string{"ports", "name"},
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{
 						"name":  "stale-name",
@@ -1000,8 +1123,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "OR policy, array identifier fails (order matters)",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "OR",
-				IdentifierFields:      []string{"ports"}, // Only test the array
+				IdentifiersMatchPolicy: "OR",
+				IdentifierFields:       []string{"ports"}, // Only test the array
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{
 						"name":  "test-svc",
@@ -1015,8 +1138,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "Literal dots in identifier fields",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "OR",
-				IdentifierFields:      []string{"['field.with.dots']"},
+				IdentifiersMatchPolicy: "OR",
+				IdentifierFields:       []string{"['field.with.dots']"},
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{
 						"field.with.dots": "value1",
@@ -1029,8 +1152,8 @@ func TestIsItemMatch(t *testing.T) {
 		{
 			name: "Literal dots in identifier fields - no match (different value)",
 			client: &UnstructuredClient{
-				IdentifierMatchPolicy: "OR",
-				IdentifierFields:      []string{"['field.with.dots']"},
+				IdentifiersMatchPolicy: "OR",
+				IdentifierFields:       []string{"['field.with.dots']"},
 				Resource: &unstructured.Unstructured{Object: map[string]interface{}{
 					"spec": map[string]interface{}{
 						"field.with.dots": "value1",

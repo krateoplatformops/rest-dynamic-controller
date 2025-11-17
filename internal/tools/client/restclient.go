@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"os"
@@ -34,6 +35,9 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		return Response{}, fmt.Errorf("OpenAPI document scheme not initialized")
 	}
 	uri := buildPath(u.Server, path, opts.Parameters, opts.Query)
+
+	// We must check if there is a server override for this specific operation
+	// so we look it up in the OpenAPI.
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {
 		return Response{}, fmt.Errorf("path not found: %s", path)
@@ -250,7 +254,7 @@ func (u *UnstructuredClient) extractItemsFromResponse(body interface{}) ([]inter
 
 		// Case 3: If no list was found inside the object, assume the object
 		// itself is the single item we are looking for e.g. `{"id": 1}`.
-		// Wrap it in a slice to create a list of one.
+		// Wrap it in a slice to create a list of one, e.g. `[{"id": 1}]`.
 		return []interface{}{bodyMap}, nil
 	}
 
@@ -293,14 +297,17 @@ func (u *UnstructuredClient) findItemInList(items []interface{}) (map[string]int
 
 // isItemMatch checks if a single item (from an API response) matches the local resource
 // by comparing all configured identifier fields.
+// The match logic can be either "AND" (all identifiers must match) or "OR" (any identifier matches).
+// Currently, the default is "OR" and there is not a decalarative way to set it to "AND" (except via an environment variable).
 func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, error) {
-	policy := strings.ToLower(u.IdentifierMatchPolicy)
+	policy := strings.ToLower(u.IdentifiersMatchPolicy)
 	if policy == "" || (policy != "and" && policy != "or") {
 		policy = "or" // Default to "or" if not specified or invalid
 	}
 
 	// If no identifiers are specified, no match is possible.
 	if len(u.IdentifierFields) == 0 {
+		// TODO: probably warning or error log
 		return false, nil
 	}
 
@@ -309,6 +316,7 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 		// AND Logic: Return false on the first failed match.
 		for _, ide := range u.IdentifierFields {
 			pathSegments, err := pathparsing.ParsePath(ide)
+			log.Printf("Checking identifier: %s", ide)
 			if err != nil || len(pathSegments) == 0 {
 				continue
 			}
@@ -328,25 +336,34 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 				// If any identifier does not match, it's not an AND match.
 				return false, nil
 			}
+			log.Printf("isItemMatch - identifier %s matched", ide)
 		}
 
 		// If the loop completes, it means all identifiers matched (AND logic succeeded).
+		log.Print("isItemMatch - AND logic succeeded, all identifiers matched\n")
 		return true, nil
 	case "or":
 		// OR Logic (default): Return true on the first successful identifier match.
 		for _, ide := range u.IdentifierFields {
+			log.Print("Inside isItemMatch - OR logic\n")
+			log.Printf("Checking identifier: %s", ide)
+
 			pathSegments, err := pathparsing.ParsePath(ide)
+			log.Printf("Parsed path segments: %v", pathSegments)
 			if err != nil || len(pathSegments) == 0 {
 				continue
 			}
 
 			val, found, err := unstructured.NestedFieldNoCopy(itemMap, pathSegments...)
+			log.Printf("isItemMatch - checking identifier %s: value=%v, found=%v, err=%v", ide, val, found, err)
+			log.Print("isItemMatch, after successful check ########################################################\n")
 			if err != nil || !found {
 				// If field is not found or there is an error, it's not a match for this identifier, so we continue.
 				continue
 			}
 
 			ok, err := u.isInResource(val, pathSegments...)
+			log.Printf("isItemMatch - comparison result for identifier %s: ok=%v, err=%v", ide, ok, err)
 			if err != nil {
 				// A hard error during comparison should be propagated up. // TODO: is this the desired behavior for OR logic?
 				return false, err
@@ -358,10 +375,12 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 			}
 		}
 
+		log.Print("isItemMatch - no identifiers matched\n")
+
 		// If the loop completes, no identifiers matched (OR logic failed).
 		return false, nil
 	default:
-		return false, fmt.Errorf("unknown identifier match policy: %s", u.IdentifierMatchPolicy)
+		return false, fmt.Errorf("unknown identifier match policy: %s", u.IdentifiersMatchPolicy)
 	}
 }
 
