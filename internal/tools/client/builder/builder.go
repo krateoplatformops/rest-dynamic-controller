@@ -106,6 +106,8 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSp
 
 	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 	if err != nil {
+		//log.Printf("Error retrieving spec fields from unstructured: %s\n", err)
+		//log.Printf("Initializing specFields as empty map\n")
 		specFields = make(map[string]interface{}) // Initialize as empty map if error when retrieving spec
 	}
 
@@ -116,6 +118,8 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSp
 
 	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
 	if err != nil {
+		//log.Printf("Error retrieving status fields from unstructured: %s\n", err)
+		//log.Printf("Initializing statusFields as empty map\n")
 		statusFields = make(map[string]interface{}) // Initialize as empty map if error when retrieving status
 	}
 
