@@ -104,19 +104,13 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	cli.IdentifierFields = clientInfo.Resource.Identifiers // TODO: probably redundant since we pass the resource too (`cli.Resource = mg`)
 	// Loop verbs, if `findby` action set, then set the IdentifiersMatchPolicy
 	for _, verb := range clientInfo.Resource.VerbsDescription {
-		log.Debug("Checking verb for IdentifiersMatchPolicy", "action", verb.Action)
-		log.Debug("Method", "method", verb.Method)
-		log.Debug("Path", "path", verb.Path)
-		log.Debug("Current IdentifiersMatchPolicy", "policy", verb.IdentifiersMatchPolicy)
-		log.Debug("string value of apiaction.FindBy", "value", string(apiaction.FindBy))
-		log.Debug("Test string comparison", "equal", verb.Action == string(apiaction.FindBy))
 		if verb.Action == string(apiaction.FindBy) && verb.IdentifiersMatchPolicy != "" {
 			cli.IdentifiersMatchPolicy = verb.IdentifiersMatchPolicy
-			log.Debug("Setting IdentifiersMatchPolicy for client", "policy", cli.IdentifiersMatchPolicy)
+			log.Debug("Found findby action and a IdentifiersMatchPolicy configured in RestDefinition", "policy", cli.IdentifiersMatchPolicy)
 			break
 		}
-		log.Debug("No IdentifiersMatchPolicy set for client, using default 'OR'")
 	}
+	log.Debug("IdentifiersMatchPolicy set for client", "policy", cli.IdentifiersMatchPolicy)
 
 	var response restclient.Response
 	// Tries to tries to build the `get` action API Call, with the given statusFields and specFields values.

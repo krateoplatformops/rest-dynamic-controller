@@ -3,7 +3,6 @@ package builder
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 
@@ -110,10 +109,10 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSp
 		specFields = make(map[string]interface{}) // Initialize as empty map if error when retrieving spec
 	}
 
-	log.Printf("Spec fields retrieved from unstructured:\n")
-	for k, v := range specFields {
-		log.Printf("Spec field key: %s, value: %v\n", k, v)
-	}
+	//log.Printf("Spec fields retrieved from unstructured:\n")
+	//for k, v := range specFields {
+	//	log.Printf("Spec field key: %s, value: %v\n", k, v)
+	//}
 
 	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
 	if err != nil {
@@ -126,16 +125,16 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSp
 	// 4. Apply values from the main resource's status
 	processFields(callInfo, statusFields, reqConfiguration, mapBody)
 
+	// 5. Set the body in the request configuration
 	reqConfiguration.Body = mapBody
 
-	log.Printf("[BuildCallConfig] reqConfiguration: %v\n", reqConfiguration)
+	//log.Printf("[BuildCallConfig] reqConfiguration: %v\n", reqConfiguration)
 
 	return reqConfiguration
 }
 
 // applyRequestFieldMapping populates the request configuration from the request field mappings.
 func applyRequestFieldMapping(callInfo *CallInfo, mg *unstructured.Unstructured, reqConfiguration *restclient.RequestConfiguration, mapBody map[string]interface{}) {
-
 	if callInfo.RequestFieldMapping == nil {
 		return
 	}
@@ -145,27 +144,25 @@ func applyRequestFieldMapping(callInfo *CallInfo, mg *unstructured.Unstructured,
 		if len(pathSegments) == 0 {
 			continue
 		}
-
-		log.Printf("Path segments for InCustomResource %s: %v\n", mapping.InCustomResource, pathSegments)
+		//log.Printf("Path segments for InCustomResource %s: %v\n", mapping.InCustomResource, pathSegments)
 
 		val, found, err := unstructured.NestedFieldNoCopy(mg.Object, pathSegments...)
 		if err != nil || !found {
 			continue
 		}
-
-		log.Printf("Value for InCustomResource %s: %v\n", mapping.InCustomResource, val)
+		//log.Printf("Value for InCustomResource %s: %v\n", mapping.InCustomResource, val)
 
 		if mapping.InPath != "" {
-			// parse InPath with pathparsing to be consistent with dot notation handling
+			// Parse InPath with pathparsing to be consistent with dot notation handling
 			inPathSegments, err := pathparsing.ParsePath(mapping.InPath)
 			if err != nil || len(inPathSegments) == 0 {
-				log.Printf("Error parsing InPath %s: %s\n", mapping.InPath, err)
+				//log.Printf("Error parsing InPath %s: %s\n", mapping.InPath, err)
 				continue
 			}
 
-			// it should be a single segment for path parameters since path parameters are flat
+			// It should be a single segment for path parameters since path parameters are flat
 			if len(inPathSegments) != 1 {
-				log.Printf("InPath %s has multiple segments after parsing, expected a single segment for path parameters\n", mapping.InPath)
+				//log.Printf("InPath %s has multiple segments after parsing, expected a single segment for path parameters\n", mapping.InPath)
 				continue
 			}
 
@@ -174,16 +171,16 @@ func applyRequestFieldMapping(callInfo *CallInfo, mg *unstructured.Unstructured,
 			reqConfiguration.Parameters[mapping.InPath] = strVal
 
 		} else if mapping.InQuery != "" {
-			// parse InQuery with pathparsing to be consistent with dot notation handling
+			// Parse InQuery with pathparsing to be consistent with dot notation handling
 			inQuerySegments, err := pathparsing.ParsePath(mapping.InQuery)
 			if err != nil || len(inQuerySegments) == 0 {
-				log.Printf("Error parsing InQuery %s: %s\n", mapping.InQuery, err)
+				//log.Printf("Error parsing InQuery %s: %s\n", mapping.InQuery, err)
 				continue
 			}
 
-			// it should be a single segment for query parameters since query parameters are flat
+			// It should be a single segment for query parameters since query parameters are flat
 			if len(inQuerySegments) != 1 {
-				log.Printf("InQuery %s has multiple segments after parsing, expected a single segment for query parameters\n", mapping.InQuery)
+				//log.Printf("InQuery %s has multiple segments after parsing, expected a single segment for query parameters\n", mapping.InQuery)
 				continue
 			}
 
@@ -192,39 +189,35 @@ func applyRequestFieldMapping(callInfo *CallInfo, mg *unstructured.Unstructured,
 			reqConfiguration.Query[mapping.InQuery] = strVal
 
 		} else if mapping.InBody != "" {
-
-			log.Printf("Processing InBody mapping")
-
-			// parse InBody with pathparsing to be consistent with dot notation handling
+			// Parse InBody with pathparsing to be consistent with dot notation handling
 			inBodySegments, err := pathparsing.ParsePath(mapping.InBody)
 			if err != nil || len(inBodySegments) == 0 {
-				log.Printf("Error parsing InBody %s: %s\n", mapping.InBody, err)
+				//log.Printf("Error parsing InBody %s: %s\n", mapping.InBody, err)
 				continue
 			}
-
-			log.Printf("InBody segments: %v\n", inBodySegments)
+			//log.Printf("InBody segments: %v\n", inBodySegments)
 
 			// Perform deep copy and type conversions (e.g., float64 to int64).
 			// This is needed since we will set the value in the body map and therefore we need to ensure the types are correct.
 			// On the other hand, for path and query parameters we convert everything to string.
 			convertedValue := deepcopy.DeepCopyJSONValue(val)
 
-			// print map body before setting the value
-			for k, v := range mapBody {
-				log.Printf("Before setting, mapBody key: %s, value: %v\n", k, v)
-			}
+			// Debug print
+			//for k, v := range mapBody {
+			//	log.Printf("Before setting, mapBody key: %s, value: %v\n", k, v)
+			//}
 
 			// Set the value in the body map at the correct nested path
 			err = unstructured.SetNestedField(mapBody, convertedValue, inBodySegments...)
 			if err != nil {
-				log.Printf("Error setting body field %s to value %v: %s\n", mapping.InBody, convertedValue, err)
+				//log.Printf("Error setting body field %s to value %v: %s\n", mapping.InBody, convertedValue, err)
 				continue
 			}
 
-			// print map body
-			for k, v := range mapBody {
-				log.Printf("mapBody key: %s, value: %v\n", k, v)
-			}
+			// Debug print
+			//for k, v := range mapBody {
+			//	log.Printf("mapBody key: %s, value: %v\n", k, v)
+			//}
 		}
 	}
 }
@@ -277,7 +270,6 @@ func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *get
 }
 
 func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfiguration *restclient.RequestConfiguration, mapBody map[string]interface{}) {
-	log.Print("Inside processFields")
 	for field, value := range fields {
 		if field == "" {
 			continue
@@ -302,7 +294,7 @@ func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfigu
 		if callInfo.ReqParams.Body.Contains(field) {
 			if mapBody[field] == nil {
 				mapBody[field] = value
-				log.Printf("Setting body field %s to value %v\n", field, value)
+				//log.Printf("Setting body field %s to value %v\n", field, value)
 			}
 		}
 	}

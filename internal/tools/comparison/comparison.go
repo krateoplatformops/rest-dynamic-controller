@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"log"
-
 	"github.com/google/go-cmp/cmp"
 	"github.com/krateoplatformops/plumbing/jqutil"
 )
@@ -38,12 +36,11 @@ func (r ComparisonResult) String() string {
 // Slices order is considered, so if the order of elements in slices is different, they are considered unequal.
 // If the values are maps or slices, it recursively compares them.
 func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path ...string) (ComparisonResult, error) {
-
 	// Iterate over keys in the first map (mg, representing the CR on the cluster)
 	for key, value := range mg {
 		currentPath := append(path, key)
 		pathStr := fmt.Sprintf("%v", currentPath)
-		log.Printf("Comparing field at path: %s", pathStr)
+		//log.Printf("Comparing field at path: %s", pathStr)
 
 		rmValue, ok := rm[key]
 		if !ok {
@@ -51,14 +48,14 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 			// TODO: to be understood if this is the desired behavior
 			// Examples:
 			// Key [configurationRef] not found in rm, ignoring and continuing (this is desired, but maybe can be whitelisted)
-			log.Printf("Key %s not found in rm, ignoring and continuing", pathStr)
+			//log.Printf("Key %s not found in rm, ignoring and continuing", pathStr)
 			continue
 		}
 
 		// Handle case where one or both values are nil
 		if value == nil || rmValue == nil {
 			if value == nil && rmValue == nil {
-				log.Printf("Both values are nil at %s, considered equal for this field", pathStr)
+				//log.Printf("Both values are nil at %s, considered equal for this field", pathStr)
 				continue // Both are nil, considered equal
 			}
 			// One is nil but the other isn't, so they are not equal.
@@ -228,21 +225,17 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 }
 
 func CompareAny(a any, b any) bool {
-	log.Print("Inside compareAny function\n")
 	strA := fmt.Sprintf("%v", a)
 	strB := fmt.Sprintf("%v", b)
-
-	log.Printf("Comparing values: '%s' and '%s'\n", strA, strB)
+	//log.Printf("Comparing values: '%s' and '%s'\n", strA, strB)
 
 	a = jqutil.InferType(strA)
 	b = jqutil.InferType(strB)
+	//log.Printf("Normalized values: '%v' and '%v'\n", a, b)
 
-	log.Printf("Normalized values: '%v' and '%v'\n", a, b)
-
-	log.Print("Inside compareAny function\n")
-	log.Printf("Values to compare: '%v' and '%v'\n", a, b)
-	diff := cmp.Diff(a, b)
-	log.Printf("cmp diff:\n%s", diff)
+	//log.Printf("Values to compare: '%v' and '%v'\n", a, b)
+	//diff := cmp.Diff(a, b)
+	//log.Printf("cmp diff:\n%s", diff)
 
 	return cmp.Equal(a, b)
 }
@@ -273,10 +266,10 @@ func DeepEqual(a, b interface{}) bool {
 	//return cmp.Equal(normA, normB)
 
 	// DEBUG
-	log.Print("Inside DeepEqual function\n")
-	log.Printf("Values to compare: '%v' and '%v'\n", a, b)
-	diff := cmp.Diff(a, b)
-	log.Printf("cmp diff:\n%s", diff)
+	//log.Print("Inside DeepEqual function\n")
+	//log.Printf("Values to compare: '%v' and '%v'\n", a, b)
+	//diff := cmp.Diff(a, b)
+	//log.Printf("cmp diff:\n%s", diff)
 
 	return cmp.Equal(a, b)
 

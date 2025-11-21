@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"os"
@@ -285,8 +284,8 @@ func (u *UnstructuredClient) findItemInList(items []interface{}) (map[string]int
 			continue
 		}
 
+		// If a match is found, return the item immediately.
 		if isMatch {
-			// If a match is found, return the item immediately.
 			return itemMap, true
 		}
 	}
@@ -301,22 +300,26 @@ func (u *UnstructuredClient) findItemInList(items []interface{}) (map[string]int
 // Currently, the default is "OR" and there is not a decalarative way to set it to "AND" (except via an environment variable).
 func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, error) {
 	policy := strings.ToLower(u.IdentifiersMatchPolicy)
+	//log.Printf("isItemMatch - using IdentifiersMatchPolicy: %s", policy)
 	if policy == "" || (policy != "and" && policy != "or") {
 		policy = "or" // Default to "or" if not specified or invalid
+		//log.Printf("isItemMatch - defaulting IdentifiersMatchPolicy to: %s", policy)
 	}
 
 	// If no identifiers are specified, no match is possible.
 	if len(u.IdentifierFields) == 0 {
 		// TODO: probably warning or error log
+		//log.Print("isItemMatch - no IdentifierFields specified, cannot perform match\n")
 		return false, nil
 	}
 
 	switch policy {
 	case "and":
+		//log.Print("isItemMatch - AND logic\n")
 		// AND Logic: Return false on the first failed match.
 		for _, ide := range u.IdentifierFields {
 			pathSegments, err := pathparsing.ParsePath(ide)
-			log.Printf("Checking identifier: %s", ide)
+			//log.Printf("Checking identifier: %s", ide)
 			if err != nil || len(pathSegments) == 0 {
 				continue
 			}
@@ -336,34 +339,35 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 				// If any identifier does not match, it's not an AND match.
 				return false, nil
 			}
-			log.Printf("isItemMatch - identifier %s matched", ide)
+			//log.Printf("isItemMatch - identifier %s matched", ide)
 		}
 
 		// If the loop completes, it means all identifiers matched (AND logic succeeded).
-		log.Print("isItemMatch - AND logic succeeded, all identifiers matched\n")
+		//log.Print("isItemMatch - AND logic succeeded, all identifiers matched\n")
 		return true, nil
 	case "or":
+		//log.Print("isItemMatch - using OR logic for identifier matching\n")
 		// OR Logic (default): Return true on the first successful identifier match.
 		for _, ide := range u.IdentifierFields {
-			log.Print("Inside isItemMatch - OR logic\n")
-			log.Printf("Checking identifier: %s", ide)
+			//log.Print("isItemMatch - OR logic\n")
+			//log.Printf("Checking identifier: %s", ide)
 
 			pathSegments, err := pathparsing.ParsePath(ide)
-			log.Printf("Parsed path segments: %v", pathSegments)
+			//log.Printf("Parsed path segments: %v", pathSegments)
 			if err != nil || len(pathSegments) == 0 {
 				continue
 			}
 
 			val, found, err := unstructured.NestedFieldNoCopy(itemMap, pathSegments...)
-			log.Printf("isItemMatch - checking identifier %s: value=%v, found=%v, err=%v", ide, val, found, err)
-			log.Print("isItemMatch, after successful check ########################################################\n")
+			//log.Printf("isItemMatch - checking identifier %s: value=%v, found=%v, err=%v", ide, val, found, err)
+			//log.Print("isItemMatch, after successful check\n")
 			if err != nil || !found {
 				// If field is not found or there is an error, it's not a match for this identifier, so we continue.
 				continue
 			}
 
 			ok, err := u.isInResource(val, pathSegments...)
-			log.Printf("isItemMatch - comparison result for identifier %s: ok=%v, err=%v", ide, ok, err)
+			//log.Printf("isItemMatch - comparison result for identifier %s: ok=%v, err=%v", ide, ok, err)
 			if err != nil {
 				// A hard error during comparison should be propagated up. // TODO: is this the desired behavior for OR logic?
 				return false, err
@@ -375,11 +379,11 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 			}
 		}
 
-		log.Print("isItemMatch - no identifiers matched\n")
-
+		//log.Print("isItemMatch - no identifiers matched\n")
 		// If the loop completes, no identifiers matched (OR logic failed).
 		return false, nil
 	default:
+		//log.Printf("isItemMatch - unknown IdentifiersMatchPolicy: %s", policy)
 		return false, fmt.Errorf("unknown identifier match policy: %s", u.IdentifiersMatchPolicy)
 	}
 }

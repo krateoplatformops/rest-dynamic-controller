@@ -2,7 +2,6 @@ package restResources
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/comparison"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/deepcopy"
@@ -26,12 +25,13 @@ func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (comp
 	// Extract the "spec" fields from the mg object
 	m, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 
-	log.Print("isCRUpdated - comparing mg spec with rm")
+	// Debug prints
+	//log.Print("isCRUpdated - comparing mg spec with rm")
 	// print the mg spec for debugging
-	log.Print("mg spec fields:")
-	for k, v := range m {
-		log.Printf("mg spec field: %s = %v", k, v)
-	}
+	//log.Print("mg spec fields:")
+	//for k, v := range m {
+	//	log.Printf("mg spec field: %s = %v", k, v)
+	//}
 
 	if err != nil {
 		return comparison.ComparisonResult{
@@ -42,10 +42,11 @@ func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (comp
 		}, fmt.Errorf("getting spec fields: %w", err)
 	}
 
-	log.Print("rm fields:")
-	for k, v := range rm {
-		log.Printf("rm field: %s = %v", k, v)
-	}
+	// Debug prints
+	//log.Print("rm fields:")
+	//for k, v := range rm {
+	//	log.Printf("rm field: %s = %v", k, v)
+	//}
 
 	return comparison.CompareExisting(m, rm)
 }
