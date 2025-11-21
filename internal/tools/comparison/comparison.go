@@ -244,6 +244,7 @@ func CompareAny(a any, b any) bool {
 // It is suitable for comparing also complex structures like maps and slices.
 // For maps (objects), key order does not matter.
 // For slices (arrays), element order and content are strictly compared.
+// TODO: to be dismissed
 func DeepEqual(a, b interface{}) bool {
 	// PROBABLY NOT NEEDED
 	// For complex types, a direct recursive comparison is correct and respects

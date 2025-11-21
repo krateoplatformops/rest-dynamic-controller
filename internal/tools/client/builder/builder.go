@@ -90,6 +90,7 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSp
 		return nil
 	}
 
+	// Initialize the request configuration with empty maps for each parameter type.
 	reqConfiguration := &restclient.RequestConfiguration{}
 	reqConfiguration.Parameters = make(map[string]string) // Path parameters
 	reqConfiguration.Query = make(map[string]string)
@@ -143,6 +144,7 @@ func applyRequestFieldMapping(callInfo *CallInfo, mg *unstructured.Unstructured,
 		return
 	}
 
+	// Iterate over the request field mappings
 	for _, mapping := range callInfo.RequestFieldMapping {
 		pathSegments, err := pathparsing.ParsePath(mapping.InCustomResource)
 		if len(pathSegments) == 0 {
@@ -206,7 +208,7 @@ func applyRequestFieldMapping(callInfo *CallInfo, mg *unstructured.Unstructured,
 			// On the other hand, for path and query parameters we convert everything to string.
 			convertedValue := deepcopy.DeepCopyJSONValue(val)
 
-			// Debug print
+			// Debug prints
 			//for k, v := range mapBody {
 			//	log.Printf("Before setting, mapBody key: %s, value: %v\n", k, v)
 			//}
@@ -218,7 +220,7 @@ func applyRequestFieldMapping(callInfo *CallInfo, mg *unstructured.Unstructured,
 				continue
 			}
 
-			// Debug print
+			// Debug prints
 			//for k, v := range mapBody {
 			//	log.Printf("mapBody key: %s, value: %v\n", k, v)
 			//}
@@ -238,6 +240,7 @@ func applyConfigSpec(req *restclient.RequestConfiguration, configSpec map[string
 			for k, v := range actionConfig {
 				stringVal := fmt.Sprintf("%v", v) // Convert any type to string
 				dest[k] = stringVal
+				//log.Printf("Setting %s field %s to value %v from configuration spec\n", key, k, v)
 			}
 		}
 	}
@@ -250,11 +253,11 @@ func applyConfigSpec(req *restclient.RequestConfiguration, configSpec map[string
 
 // IsResourceKnown tries to build the `get` action API Call, with the given specFields and statusFields values.
 // If it is able to build the `get` action request, returns true, false otherwise.
-// Usually the `get` action is used to retrieve the resource by its unique identifier (usually server-side generated and assigned).
-// Therefore "known" in this case means that the resource can be retrieved by this kind of identifier.
-// This function is used during the reconciliation to decide:
-// - if the resource can be retrieved by its unique identifier (usually server-side generated and assigned) (e.g GET /resource/{id})
-// - or if it needs to be found by its identifiers fields (e.g., unique name within a organization) in a list of resources (e.g GET /resources)
+// Usually the `get` action is used to retrieve the resource by its unique identifier (usually server-side generated and assigned, e.g., ID, UUID).
+// Therefore "known" in this case means that the resource can be retrieved by this kind of identifiers.
+// This function is used during the reconciliation (in the Observe phase) to decide:
+// - if the resource can be retrieved by its unique identifier (usually server-side generated and assigned) (e.g GET /resources/{id})
+// - or if it needs to be found by its "findby" identifiers fields (e.g., unique name within a organization) in a list of resources (e.g GET /resources)
 func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *getter.Info, mg *unstructured.Unstructured) bool {
 	if mg == nil || clientInfo == nil {
 		return false
@@ -273,6 +276,7 @@ func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *get
 	return cli.ValidateRequest(callInfo.Method, callInfo.Path, reqConfiguration.Parameters, reqConfiguration.Query, reqConfiguration.Headers, reqConfiguration.Cookies) == nil
 }
 
+// processFields processes the given fields map (spec or status fields) and populates the request configuration accordingly.
 func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfiguration *restclient.RequestConfiguration, mapBody map[string]interface{}) {
 	for field, value := range fields {
 		if field == "" {
@@ -282,12 +286,14 @@ func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfigu
 		if callInfo.ReqParams.Parameters.Contains(field) {
 			if _, ok := reqConfiguration.Parameters[field]; !ok { // Avoid overwriting existing values
 				reqConfiguration.Parameters[field] = fmt.Sprintf("%v", value)
+				//log.Printf("Setting path parameter field %s to value %v from resource\n", field, value)
 			}
 		}
 
 		if callInfo.ReqParams.Query.Contains(field) {
 			if _, ok := reqConfiguration.Query[field]; !ok { // Avoid overwriting existing values
 				reqConfiguration.Query[field] = fmt.Sprintf("%v", value)
+				//log.Printf("Setting query field %s to value %v from resource\n", field, value)
 			}
 		}
 

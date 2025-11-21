@@ -50,7 +50,8 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		}
 
 		if len(op.Servers) > 0 {
-			server := op.Servers[0] // Use the first server defined for the operation (multiple servers per operation are not supported)
+			server := op.Servers[0] // Use the first server defined for the operation (multiple servers per operation are not supported by Rest Dynamic Controller)
+			// Changed the uri since we have a server override for this operation
 			uri = buildPath(server.URL, path, opts.Parameters, opts.Query)
 		}
 	}

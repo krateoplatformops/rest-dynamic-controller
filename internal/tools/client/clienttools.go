@@ -127,7 +127,7 @@ type RequestConfiguration struct {
 // isInResource is a method used during a "FindBy" operation.
 // It compares a value from an API response with the corresponding value in the local Unstructured resource.
 // It checks for the identifier's presence and correctness in 'spec' first, then falls back to checking 'status'.
-// TODO: to be evaluated for potential addition of `ResponseFieldMapping`
+// TODO: to be evaluated for potential addition of `ResponseFieldMapping` (possiblely in future versions).
 func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath ...string) (bool, error) {
 	if u.Resource == nil {
 		return false, fmt.Errorf("resource is nil")
