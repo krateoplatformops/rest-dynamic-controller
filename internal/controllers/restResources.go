@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 
 	customcondition "github.com/krateoplatformops/rest-dynamic-controller/internal/controllers/condition"
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
@@ -100,17 +99,25 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	}
 
 	cli.Debug = meta.IsVerbose(mg)
-	cli.SetAuth = clientInfo.SetAuth
-	cli.IdentifierFields = clientInfo.Resource.Identifiers                           // TODO: probably redundant since we pass the resource too
-	cli.IdentifierMatchPolicy = os.Getenv("REST_CONTROLLER_IDENTIFIER_MATCH_POLICY") // If not set, it will default to "OR"
 	cli.Resource = mg
+	cli.SetAuth = clientInfo.SetAuth
+	cli.IdentifierFields = clientInfo.Resource.Identifiers // TODO: probably redundant since we pass the resource too (`cli.Resource = mg`)
+	// Loop verbs, if `findby` action set, then set the IdentifiersMatchPolicy
+	for _, verb := range clientInfo.Resource.VerbsDescription {
+		if verb.Action == string(apiaction.FindBy) && verb.IdentifiersMatchPolicy != "" {
+			cli.IdentifiersMatchPolicy = verb.IdentifiersMatchPolicy
+			log.Debug("Found findby action and a IdentifiersMatchPolicy configured in RestDefinition", "policy", cli.IdentifiersMatchPolicy)
+			break
+		}
+	}
+	log.Debug("IdentifiersMatchPolicy set for client", "policy", cli.IdentifiersMatchPolicy)
 
 	var response restclient.Response
 	// Tries to tries to build the `get` action API Call, with the given statusFields and specFields values.
 	// If it is able to validate the `get` action request, returns true
 	isKnown := builder.IsResourceKnown(cli, clientInfo, mg)
 	if isKnown {
-		// Getting the external resource by its identifier (e.g GET /resource/{id}).
+		// Getting the external resource by its identifier (e.g GET /resources/{id}).
 		apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Get)
 		if apiCall == nil || callInfo == nil {
 			log.Error(fmt.Errorf("API action get not found"), "action", apiaction.Get)

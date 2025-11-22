@@ -104,9 +104,9 @@ type UnstructuredClientInterface interface {
 }
 
 type UnstructuredClient struct {
-	IdentifierFields      []string
-	IdentifierMatchPolicy string
-	Resource              *unstructured.Unstructured
+	IdentifierFields       []string
+	IdentifiersMatchPolicy string
+	Resource               *unstructured.Unstructured
 	//Doc                   libopenapi.Document         // Parsed OpenAPI document by libopenapi, needed for http request validation. TODO: to be re-enabled when libopenapi-validator is stable
 	DocScheme *libopenapi.DocumentModel[v3.Document] // OpenAPI document model (high-level)
 	Server    string
@@ -127,45 +127,39 @@ type RequestConfiguration struct {
 // isInResource is a method used during a "FindBy" operation.
 // It compares a value from an API response with the corresponding value in the local Unstructured resource.
 // It checks for the identifier's presence and correctness in 'spec' first, then falls back to checking 'status'.
-// TODO: to be evaluated for potential addition of `ResponseFieldMapping`
+// TODO: to be evaluated for potential addition of `ResponseFieldMapping` (possiblely in future versions).
 func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath ...string) (bool, error) {
 	if u.Resource == nil {
 		return false, fmt.Errorf("resource is nil")
 	}
 
-	//log.Printf("isInResource: comparing field '%s', API value: '%v'", strings.Join(fieldPath, "."), responseValue)
-
 	// Check 1: Look for the identifier in the 'spec'.
 	if localValue, found, err := unstructured.NestedFieldNoCopy(u.Resource.Object, append([]string{"spec"}, fieldPath...)...); err == nil && found {
-		//log.Printf("isInResource: found field in spec: '%v'", localValue)
 		// If the field is found in the spec, we compare it.
 		// If it matches, we have a definitive match and can return true.
-		if comparison.DeepEqual(localValue, responseValue) {
-			//log.Printf("isInResource: match found in spec.")
+		//log.Printf("isInResource - found in spec: localValue=%v, responseValue=%v", localValue, responseValue)
+		if comparison.CompareAny(localValue, responseValue) {
+			//log.Print("isInResource - comparison CompareAny returned true")
 			return true, nil
 		}
-		//log.Printf("isInResource: value in spec did not match.")
 	} else if err != nil {
 		return false, fmt.Errorf("error searching for identifier in spec: %w", err)
 	}
 
 	// Check 2: If the identifier was not found in spec, or if it was found but did not match,
 	// we proceed to check the 'status'. This is common for server-assigned identifiers.
+	// Last resort check, even if it makes less sense to search for findby identifiers in status.
 	if localValue, found, err := unstructured.NestedFieldNoCopy(u.Resource.Object, append([]string{"status"}, fieldPath...)...); err == nil && found {
-		//log.Printf("isInResource: found field in status: '%v'", localValue)
 		// If found in status, we compare it. This is the last chance for a match.
-		if comparison.DeepEqual(localValue, responseValue) {
-			//log.Printf("isInResource: match found in status.")
+		if comparison.CompareAny(localValue, responseValue) {
 			return true, nil
 		}
-		//log.Printf("isInResource: value in status did not match.")
 	} else if err != nil {
 		return false, fmt.Errorf("error searching for identifier in status: %w", err)
 	}
 
+	//log.Printf("isInResource - identifier not found in spec or status for path %v", fieldPath)
 	// No match.
-	//log.Printf("isInResource: value for field '%s' not found in spec or status.", strings.Join(fieldPath, "."))
-
 	return false, nil
 }
 

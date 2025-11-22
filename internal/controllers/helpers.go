@@ -2,11 +2,11 @@ package restResources
 
 import (
 	"fmt"
-	"math"
-	"strings"
 
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/comparison"
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/deepcopy"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/pathparsing"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -24,6 +24,15 @@ func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (comp
 
 	// Extract the "spec" fields from the mg object
 	m, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
+
+	// Debug prints
+	//log.Print("isCRUpdated - comparing mg spec with rm")
+	// print the mg spec for debugging
+	//log.Print("mg spec fields:")
+	//for k, v := range m {
+	//	log.Printf("mg spec field: %s = %v", k, v)
+	//}
+
 	if err != nil {
 		return comparison.ComparisonResult{
 			IsEqual: false,
@@ -32,6 +41,12 @@ func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (comp
 			},
 		}, fmt.Errorf("getting spec fields: %w", err)
 	}
+
+	// Debug prints
+	//log.Print("rm fields:")
+	//for k, v := range rm {
+	//	log.Printf("rm field: %s = %v", k, v)
+	//}
 
 	return comparison.CompareExisting(m, rm)
 }
@@ -59,86 +74,28 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 	}
 
 	for _, fieldName := range allFields {
-		//log.Printf("Managing field: %s", fieldName)
-		// Split the field name by '.' to handle nested paths.
-		path := strings.Split(fieldName, ".")
-		//log.Printf("Field path split: %v", path)
+		// Parse the field name into path segments.
+		pathSegments, err := pathparsing.ParsePath(fieldName)
+		if err != nil || len(pathSegments) == 0 {
+			continue
+		}
 
-		// Extract the raw value from the response body without copying.
-		value, found, err := unstructured.NestedFieldNoCopy(body, path...)
+		// Extract the raw value from the response body.
+		value, found, err := unstructured.NestedFieldNoCopy(body, pathSegments...)
 		if err != nil || !found {
 			// An error here means the path was invalid or not found.
 			// We can safely continue to the next field.
-			//log.Printf("Field '%s' not found in response body or error occurred: %v", fieldName, err)
 			continue
 		}
-		//log.Printf("Extracted value for field '%s': %v", fieldName, value)
 
 		// Perform deep copy and type conversions (e.g., float64 to int64).
-		convertedValue := deepCopyJSONValue(value)
-		//log.Printf("Converted value for field '%s': %v", fieldName, convertedValue)
+		convertedValue := deepcopy.DeepCopyJSONValue(value)
 
 		// The destination path in the status should mirror the source path.
-		statusPath := append([]string{"status"}, path...)
-		//log.Printf("Setting value for field '%s' at status path: %v", fieldName, statusPath)
+		statusPath := append([]string{"status"}, pathSegments...)
 		if err := unstructured.SetNestedField(mg.Object, convertedValue, statusPath...); err != nil {
 			return fmt.Errorf("setting nested field '%s' in status: %w", fieldName, err)
 		}
-		//log.Printf("Successfully set field '%s' with value: %v at path: %v", fieldName, convertedValue, statusPath)
 	}
-
 	return nil
-}
-
-// Note: forked from plumbing/maps/deepcopy.go
-// modified the float handling
-func deepCopyJSONValue(x any) any {
-	switch x := x.(type) {
-	case map[string]any:
-		if x == nil {
-			// Typed nil - an any that contains a type map[string]any with a value of nil
-			return x
-		}
-		clone := make(map[string]any, len(x))
-		for k, v := range x {
-			clone[k] = deepCopyJSONValue(v)
-		}
-		return clone
-	case []any:
-		if x == nil {
-			// Typed nil - an any that contains a type []any with a value of nil
-			return x
-		}
-		clone := make([]any, len(x))
-		for i, v := range x {
-			clone[i] = deepCopyJSONValue(v)
-		}
-		return clone
-	case []map[string]any:
-		if x == nil {
-			return x
-		}
-		clone := make([]any, len(x))
-		for i, v := range x {
-			clone[i] = deepCopyJSONValue(v)
-		}
-		return clone
-	case string, int64, bool, nil:
-		return x
-	case int:
-		return int64(x)
-	case int32:
-		return int64(x)
-	case float32:
-		if x >= math.MinInt64 && x <= math.MaxInt64 {
-			return int64(x)
-		}
-	case float64:
-		if x >= math.MinInt64 && x <= math.MaxInt64 {
-			return int64(x)
-		}
-	default:
-		return fmt.Sprintf("%v", x)
-	}
-	return fmt.Sprintf("%v", x) // Fallback for unsupported types
 }

@@ -9,6 +9,8 @@ import (
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 
 	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/deepcopy"
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/pathparsing"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/text"
@@ -88,6 +90,7 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSp
 		return nil
 	}
 
+	// Initialize the request configuration with empty maps for each parameter type.
 	reqConfiguration := &restclient.RequestConfiguration{}
 	reqConfiguration.Parameters = make(map[string]string) // Path parameters
 	reqConfiguration.Query = make(map[string]string)
@@ -104,11 +107,21 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSp
 
 	specFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "spec")
 	if err != nil {
-		specFields = make(map[string]interface{}) // Initialize as empty map
+		//log.Printf("Error retrieving spec fields from unstructured: %s\n", err)
+		//log.Printf("Initializing specFields as empty map\n")
+		specFields = make(map[string]interface{}) // Initialize as empty map if error when retrieving spec
 	}
+
+	//log.Printf("Spec fields retrieved from unstructured:\n")
+	//for k, v := range specFields {
+	//	log.Printf("Spec field key: %s, value: %v\n", k, v)
+	//}
+
 	statusFields, err := unstructuredtools.GetFieldsFromUnstructured(mg, "status")
 	if err != nil {
-		statusFields = make(map[string]interface{}) // Initialize as empty map
+		//log.Printf("Error retrieving status fields from unstructured: %s\n", err)
+		//log.Printf("Initializing statusFields as empty map\n")
+		statusFields = make(map[string]interface{}) // Initialize as empty map if error when retrieving status
 	}
 
 	// 3. Apply values from the main resource's spec (spec takes precedence over status in case of duplicates).
@@ -117,51 +130,100 @@ func BuildCallConfig(callInfo *CallInfo, mg *unstructured.Unstructured, configSp
 	// 4. Apply values from the main resource's status
 	processFields(callInfo, statusFields, reqConfiguration, mapBody)
 
+	// 5. Set the body in the request configuration
 	reqConfiguration.Body = mapBody
+
+	//log.Printf("[BuildCallConfig] reqConfiguration: %v\n", reqConfiguration)
 
 	return reqConfiguration
 }
 
 // applyRequestFieldMapping populates the request configuration from the request field mappings.
 func applyRequestFieldMapping(callInfo *CallInfo, mg *unstructured.Unstructured, reqConfiguration *restclient.RequestConfiguration, mapBody map[string]interface{}) {
-
 	if callInfo.RequestFieldMapping == nil {
-		//log.Printf("No RequestFieldMapping defined for action %s\n", callInfo.Action.String())
 		return
 	}
 
+	// Iterate over the request field mappings
 	for _, mapping := range callInfo.RequestFieldMapping {
-		pathParts := strings.Split(mapping.InCustomResource, ".")
-		if len(pathParts) == 0 {
+		pathSegments, err := pathparsing.ParsePath(mapping.InCustomResource)
+		if len(pathSegments) == 0 {
 			continue
 		}
+		//log.Printf("Path segments for InCustomResource %s: %v\n", mapping.InCustomResource, pathSegments)
 
-		val, found, err := unstructured.NestedFieldNoCopy(mg.Object, pathParts...)
-		if err != nil {
-			//log.Printf("Error retrieving field %s from custom resource to be used in RequestFieldMapping: %s\n", mapping.InCustomResource, err)
+		val, found, err := unstructured.NestedFieldNoCopy(mg.Object, pathSegments...)
+		if err != nil || !found {
 			continue
 		}
-		if !found {
-			//log.Printf("Field %s not found in custom resource to be used in RequestFieldMapping\n", mapping.InCustomResource)
-			continue
-		}
-
-		//log.Printf("Processing RequestFieldMapping: custom resource field %s with value %v\n", mapping.InCustomResource, val)
+		//log.Printf("Value for InCustomResource %s: %v\n", mapping.InCustomResource, val)
 
 		if mapping.InPath != "" {
-			//log.Printf("Mapping to path parameter %s\n", mapping.InPath)
+			// Parse InPath with pathparsing to be consistent with dot notation handling
+			inPathSegments, err := pathparsing.ParsePath(mapping.InPath)
+			if err != nil || len(inPathSegments) == 0 {
+				//log.Printf("Error parsing InPath %s: %s\n", mapping.InPath, err)
+				continue
+			}
+
+			// It should be a single segment for path parameters since path parameters are flat
+			if len(inPathSegments) != 1 {
+				//log.Printf("InPath %s has multiple segments after parsing, expected a single segment for path parameters\n", mapping.InPath)
+				continue
+			}
+
+			mapping.InPath = inPathSegments[0]
 			strVal := fmt.Sprintf("%v", val)
 			reqConfiguration.Parameters[mapping.InPath] = strVal
-			//log.Printf("Added mapping field %s to path parameter %s with value %s\n", mapping.InCustomResource, mapping.InPath, strVal)
+
 		} else if mapping.InQuery != "" {
-			//log.Printf("Mapping to query parameter %s\n", mapping.InQuery)
+			// Parse InQuery with pathparsing to be consistent with dot notation handling
+			inQuerySegments, err := pathparsing.ParsePath(mapping.InQuery)
+			if err != nil || len(inQuerySegments) == 0 {
+				//log.Printf("Error parsing InQuery %s: %s\n", mapping.InQuery, err)
+				continue
+			}
+
+			// It should be a single segment for query parameters since query parameters are flat
+			if len(inQuerySegments) != 1 {
+				//log.Printf("InQuery %s has multiple segments after parsing, expected a single segment for query parameters\n", mapping.InQuery)
+				continue
+			}
+
+			mapping.InQuery = inQuerySegments[0]
 			strVal := fmt.Sprintf("%v", val)
 			reqConfiguration.Query[mapping.InQuery] = strVal
-			//log.Printf("Added mapping field %s to query parameter %s with value %s\n", mapping.InCustomResource, mapping.InQuery, strVal)
+
 		} else if mapping.InBody != "" {
-			//log.Printf("Mapping to body field %s\n", mapping.InBody)
-			mapBody[mapping.InBody] = val
-			//log.Printf("Added mapping field %s to body field %s with value %v\n", mapping.InCustomResource, mapping.InBody, val)
+			// Parse InBody with pathparsing to be consistent with dot notation handling
+			inBodySegments, err := pathparsing.ParsePath(mapping.InBody)
+			if err != nil || len(inBodySegments) == 0 {
+				//log.Printf("Error parsing InBody %s: %s\n", mapping.InBody, err)
+				continue
+			}
+			//log.Printf("InBody segments: %v\n", inBodySegments)
+
+			// Perform deep copy and type conversions (e.g., float64 to int64).
+			// This is needed since we will set the value in the body map and therefore we need to ensure the types are correct.
+			// On the other hand, for path and query parameters we convert everything to string.
+			convertedValue := deepcopy.DeepCopyJSONValue(val)
+
+			// Debug prints
+			//for k, v := range mapBody {
+			//	log.Printf("Before setting, mapBody key: %s, value: %v\n", k, v)
+			//}
+
+			// Set the value in the body map at the correct nested path
+			err = unstructured.SetNestedField(mapBody, convertedValue, inBodySegments...)
+			if err != nil {
+				//log.Printf("Error setting body field %s to value %v: %s\n", mapping.InBody, convertedValue, err)
+				continue
+			}
+
+			// Debug prints
+			//for k, v := range mapBody {
+			//	log.Printf("mapBody key: %s, value: %v\n", k, v)
+			//}
 		}
 	}
 }
@@ -172,16 +234,13 @@ func applyConfigSpec(req *restclient.RequestConfiguration, configSpec map[string
 		return
 	}
 
-	//fmt.Printf("Applying config spec for action: %s\n", action)
-	//fmt.Printf("Config spec content: %v\n", configSpec)
-
 	// Internal helper to avoid repetition
 	process := func(key string, dest map[string]string) {
 		if actionConfig, found, err := unstructured.NestedMap(configSpec, key, action); err == nil && found && actionConfig != nil {
 			for k, v := range actionConfig {
 				stringVal := fmt.Sprintf("%v", v) // Convert any type to string
 				dest[k] = stringVal
-				//fmt.Printf("%s param set from config spec: %s=%s\n", key, k, stringVal)
+				//log.Printf("Setting %s field %s to value %v from configuration spec\n", key, k, v)
 			}
 		}
 	}
@@ -194,11 +253,11 @@ func applyConfigSpec(req *restclient.RequestConfiguration, configSpec map[string
 
 // IsResourceKnown tries to build the `get` action API Call, with the given specFields and statusFields values.
 // If it is able to build the `get` action request, returns true, false otherwise.
-// Usually the `get` action is used to retrieve the resource by its unique identifier (usually server-side generated and assigned).
-// Therefore "known" in this case means that the resource can be retrieved by this kind of identifier.
-// This function is used during the reconciliation to decide:
-// - if the resource can be retrieved by its unique identifier (usually server-side generated and assigned) (e.g GET /resource/{id})
-// - or if it needs to be found by its identifiers fields (e.g., unique name within a organization) in a list of resources (e.g GET /resources)
+// Usually the `get` action is used to retrieve the resource by its unique identifier (usually server-side generated and assigned, e.g., ID, UUID).
+// Therefore "known" in this case means that the resource can be retrieved by this kind of identifiers.
+// This function is used during the reconciliation (in the Observe phase) to decide:
+// - if the resource can be retrieved by its unique identifier (usually server-side generated and assigned) (e.g GET /resources/{id})
+// - or if it needs to be found by its "findby" identifiers fields (e.g., unique name within a organization) in a list of resources (e.g GET /resources)
 func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *getter.Info, mg *unstructured.Unstructured) bool {
 	if mg == nil || clientInfo == nil {
 		return false
@@ -217,6 +276,7 @@ func IsResourceKnown(cli restclient.UnstructuredClientInterface, clientInfo *get
 	return cli.ValidateRequest(callInfo.Method, callInfo.Path, reqConfiguration.Parameters, reqConfiguration.Query, reqConfiguration.Headers, reqConfiguration.Cookies) == nil
 }
 
+// processFields processes the given fields map (spec or status fields) and populates the request configuration accordingly.
 func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfiguration *restclient.RequestConfiguration, mapBody map[string]interface{}) {
 	for field, value := range fields {
 		if field == "" {
@@ -226,22 +286,25 @@ func processFields(callInfo *CallInfo, fields map[string]interface{}, reqConfigu
 		if callInfo.ReqParams.Parameters.Contains(field) {
 			if _, ok := reqConfiguration.Parameters[field]; !ok { // Avoid overwriting existing values
 				reqConfiguration.Parameters[field] = fmt.Sprintf("%v", value)
+				//log.Printf("Setting path parameter field %s to value %v from resource\n", field, value)
 			}
 		}
 
 		if callInfo.ReqParams.Query.Contains(field) {
 			if _, ok := reqConfiguration.Query[field]; !ok { // Avoid overwriting existing values
 				reqConfiguration.Query[field] = fmt.Sprintf("%v", value)
+				//log.Printf("Setting query field %s to value %v from resource\n", field, value)
 			}
 		}
 
 		// Note: probably headers and cookies are better to be set ONLY in the Configuration CR spec
 		// (and currently it is only possible there)
-		// Therefore, we do not set them here since we are processing only the main resource fields
+		// Therefore, we do not set them here since we are processing only the main resource fields (spec/status) with this function.
 
 		if callInfo.ReqParams.Body.Contains(field) {
 			if mapBody[field] == nil {
 				mapBody[field] = value
+				//log.Printf("Setting body field %s to value %v\n", field, value)
 			}
 		}
 	}
