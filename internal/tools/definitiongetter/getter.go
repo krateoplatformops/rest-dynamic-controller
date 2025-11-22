@@ -15,8 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
-
-	"log"
 )
 
 // RequestFieldMappingItem defines a single mapping from a path parameter, query parameter or body field
@@ -212,10 +210,10 @@ func (g *dynamicGetter) Get(un *unstructured.Unstructured) (*Info, error) {
 				Resource: resource,
 			}
 
-			log.Printf("Found definition for '%v' in namespace: %s", gvr, un.GetNamespace())
+			//log.Printf("Found definition for '%v' in namespace: %s", gvr, un.GetNamespace())
 			// print info as json for debugging
-			infoJson, _ := json.MarshalIndent(info, "", "  ")
-			log.Printf("Definition info: %s", string(infoJson))
+			//infoJson, _ := json.MarshalIndent(info, "", "  ")
+			//log.Printf("Definition info: %s", string(infoJson))
 
 			err = g.processConfigurationRef(un, info)
 			if err != nil {
