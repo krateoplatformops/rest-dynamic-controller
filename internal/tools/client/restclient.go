@@ -195,6 +195,9 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 		return u.singleCallFindBy(ctx, cli, path, opts)
 	}
 
+	log.Println("FindBy - pagination configured, performing paginated calls")
+
+	// Create the paginator based on the configuration (e.g., continuation token).
 	paginator, err := pagination.NewPaginator(findByAction.Pagination)
 	if err != nil {
 		log.Printf("FindBy - failed to create paginator: %v", err)

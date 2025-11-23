@@ -17,7 +17,7 @@ type Paginator interface {
 	UpdateRequest(req *http.Request) error
 
 	// ShouldContinue determines if another request is needed based on the last response.
-	// It's responsible for extracting the next token/page number and updating its internal state.
+	// For instance, it's responsible for extracting the next token/page number and updating its internal state.
 	ShouldContinue(resp *http.Response, body []byte) (bool, error)
 }
 

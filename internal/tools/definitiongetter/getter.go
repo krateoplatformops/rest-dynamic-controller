@@ -17,52 +17,52 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// Pagination defines the overall pagination strategy for an action.
+// Pagination defines the pagination strategy for a "findby" action.
+// Currently, only 'continuationToken' is supported.
 type Pagination struct {
-	// The type of pagination strategy to use.
-	// +kubebuilder:validation:Enum=continuationToken;pageNumber;offset
+	// Type specifies the pagination strategy. Currently, only 'continuationToken' is supported.
 	Type string `json:"type"`
-
 	// Configuration for 'continuationToken' pagination. Required if type is 'continuationToken'.
-	// +optional
 	ContinuationToken *ContinuationTokenConfig `json:"continuationToken,omitempty"`
-
 	// (Future) Configuration for 'pageNumber' pagination.
-	// +optional
-	PageNumber *PageNumberConfig `json:"pageNumber,omitempty"`
-
+	//PageNumber *PageNumberConfig `json:"pageNumber,omitempty"`
 	// (Future) Configuration for 'offset' pagination.
-	// +optional
-	Offset *OffsetConfig `json:"offset,omitempty"`
+	//Offset *OffsetConfig `json:"offset,omitempty"`
 }
 
 // ContinuationTokenConfig holds the specific settings for token-based pagination.
 type ContinuationTokenConfig struct {
-	Request  RequestPagination  `json:"request"`
-	Response ResponsePagination `json:"response"`
+	// Request: defines how to include the pagination token in the API request.
+	Request ContinuationTokenRequest `json:"request"`
+	// Response: defines how to extract the pagination token from the API response.
+	Response ContinuationTokenResponse `json:"response"`
 }
 
-// RequestPagination defines how to include the pagination token in the API request.
-type RequestPagination struct {
-	// Where the token is located: "query" or "header".
+// ContinuationTokenRequest defines how to include the pagination token in the API request.
+type ContinuationTokenRequest struct {
+	// Where the token is located: "query", "header" or "body". Currently, only "query" is supported.
 	TokenIn string `json:"tokenIn"`
-	// The name of the query parameter or header.
+	// The path or name of the query parameter, header, or body field.
+	// For query parameters and headers, this is simply the name.
+	// For body fields, this should be a JSON path.
 	TokenPath string `json:"tokenPath"`
 }
 
-// ResponsePagination defines how to extract the pagination token from the API response.
-type ResponsePagination struct {
-	// Where the token is located: "header" or "body".
+// ContinuationTokenResponse defines how to extract the pagination token from the API response.
+type ContinuationTokenResponse struct {
+	// Where the token is located: "header" or "body". Currently, only "header" is supported.
 	TokenIn string `json:"tokenIn"`
-	// The name of the header or the JSON path in the body (using gjson syntax).
+	// The path or name of the header or body field.
+	// For headers, this is simply the name.
+	// For body fields, this should be a JSON path.
 	TokenPath string `json:"tokenPath"`
 }
 
 // PageNumberConfig is a placeholder for future page number pagination settings.
-type PageNumberConfig struct{}
+//type PageNumberConfig struct{}
 
 // OffsetConfig is a placeholder for future offset pagination settings.
-type OffsetConfig struct{}
+//type OffsetConfig struct{}
 
 // RequestFieldMappingItem defines a single mapping from a path parameter, query parameter or body field
 // to a field in the Custom Resource.

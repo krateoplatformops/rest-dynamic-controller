@@ -53,14 +53,16 @@ func TestFindBy_Pagination_HeaderToken(t *testing.T) {
 	// Mock server that simulates pagination via headers
 	page1Response := `{"items": [{"id": "1", "name": "one"}]}`
 	page2Response := `{"items": [{"id": "2", "name": "two"}]}`
-	
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := r.URL.Query().Get("token")
 		if token == "page2" {
+			// Return second page without next token
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprintln(w, page2Response)
 		} else {
+			// Return first page with next token to get second page
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("X-Next-Token", "page2")
 			w.WriteHeader(http.StatusOK)
@@ -91,11 +93,11 @@ func TestFindBy_Pagination_HeaderToken(t *testing.T) {
 		Pagination: &getter.Pagination{
 			Type: "continuationToken",
 			ContinuationToken: &getter.ContinuationTokenConfig{
-				Request: getter.RequestPagination{
+				Request: getter.ContinuationTokenRequest{
 					TokenIn:   "query",
 					TokenPath: "token",
 				},
-				Response: getter.ResponsePagination{
+				Response: getter.ContinuationTokenResponse{
 					TokenIn:   "header",
 					TokenPath: "X-Next-Token",
 				},
@@ -155,11 +157,11 @@ func TestFindBy_Pagination_BodyToken(t *testing.T) {
 		Pagination: &getter.Pagination{
 			Type: "continuationToken",
 			ContinuationToken: &getter.ContinuationTokenConfig{
-				Request: getter.RequestPagination{
+				Request: getter.ContinuationTokenRequest{
 					TokenIn:   "query",
 					TokenPath: "token",
 				},
-				Response: getter.ResponsePagination{
+				Response: getter.ContinuationTokenResponse{
 					TokenIn:   "body",
 					TokenPath: "nextToken",
 				},
