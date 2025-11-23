@@ -56,7 +56,7 @@ func (m *mockUnstructuredClient) Call(ctx context.Context, cli *http.Client, pat
 	return restclient.Response{}, nil
 }
 
-func (m *mockUnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, conf *restclient.RequestConfiguration) (restclient.Response, error) {
+func (m *mockUnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, conf *restclient.RequestConfiguration, findByAction *getter.VerbsDescription) (restclient.Response, error) {
 	return restclient.Response{}, nil
 }
 
