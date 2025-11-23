@@ -73,8 +73,13 @@ func APICallBuilder(cli restclient.UnstructuredClientInterface, info *getter.Inf
 			}
 
 			switch action {
-			case apiaction.FindBy: // FindBy is used to find the resource by the identifier fields (usually in a list of resources)
-				return cli.FindBy, callInfo, nil // FindBy has its own function
+			case apiaction.FindBy:
+				// Specialized FindBy function, we need to pass also the description in this case so we use a closure.
+				// We return a function that captures the `descr` variable from the surrounding scope
+				// and uses it when the returned function is called but still conforms to the APIFuncDef signature.
+				return func(ctx context.Context, httpClient *http.Client, path string, conf *restclient.RequestConfiguration) (restclient.Response, error) {
+					return cli.FindBy(ctx, httpClient, path, conf, &descr)
+				}, callInfo, nil
 			default:
 				return cli.Call, callInfo, nil // Generic Call function
 			}

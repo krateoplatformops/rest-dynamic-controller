@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"os"
 	"strings"
 
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/pagination"
+	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/pathparsing"
 	rawyaml "gopkg.in/yaml.v3"
 
@@ -185,17 +188,77 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 // FindBy locates a specific resource within an API response it retrieves.
 // It serves as the primary orchestrator for the `FindBy` action of the Rest Dynamic Controller,
 // delegating response parsing and item matching to helper functions: extractItemsFromResponse, findItemInList, and isItemMatch.
-func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (Response, error) {
-	// Execute the initial API call.
+func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration, findByAction *getter.VerbsDescription) (Response, error) {
+	if findByAction == nil || findByAction.Pagination == nil {
+		// No pagination configured, perform a single call.
+		log.Println("FindBy - no pagination configured, performing single call")
+		return u.singleCallFindBy(ctx, cli, path, opts)
+	}
+
+	paginator, err := pagination.NewPaginator(findByAction.Pagination)
+	if err != nil {
+		log.Printf("FindBy - failed to create paginator: %v", err)
+		return Response{}, fmt.Errorf("failed to create paginator: %w", err)
+	}
+	if paginator == nil {
+		// Paginator factory returned nil, treat as no pagination.
+		log.Println("FindBy - paginator is nil, performing single call")
+		return u.singleCallFindBy(ctx, cli, path, opts)
+	}
+
+	paginator.Init()
+
+	for {
+		// Build and execute the request with the current paginator configuration (e.g., continuationToken).
+		response, req, err := u.executeCallForPagination(ctx, cli, path, opts, paginator)
+		if err != nil {
+			return Response{}, err
+		}
+
+		// Normalize the response to a list of items.
+		itemList, err := u.extractItemsFromResponse(response.ResponseBody)
+		if err != nil {
+			// If extraction fails, we can't continue.
+			return Response{}, err
+		}
+
+		// Search for a matching item in the current page's results.
+		if matchedItem, found := u.findItemInList(itemList); found {
+			// Found a match, return it immediately.
+			return Response{
+				ResponseBody: matchedItem,
+				statusCode:   response.statusCode,
+			}, nil
+		}
+
+		// Ask the paginator if we should continue to the next page.
+		bodyBytes, _ := json.Marshal(response.ResponseBody) // Marshal body for analysis
+		shouldContinue, err := paginator.ShouldContinue(req.Response, bodyBytes)
+		if err != nil {
+			return Response{}, fmt.Errorf("error checking pagination continuation: %w", err)
+		}
+
+		if !shouldContinue {
+			// Paginator says we are done, break the loop.
+			break
+		}
+	}
+
+	// If the loop completes without finding a match, return a Not Found error.
+	return Response{}, &StatusError{
+		StatusCode: http.StatusNotFound,
+		Inner:      fmt.Errorf("item not found after checking all pages"),
+	}
+}
+
+// singleCallFindBy executes a non-paginated FindBy operation.
+func (u *UnstructuredClient) singleCallFindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (Response, error) {
 	response, err := u.Call(ctx, cli, path, opts)
 	if err != nil {
 		return Response{}, err
 	}
 	if response.ResponseBody == nil {
-		return Response{}, &StatusError{
-			StatusCode: http.StatusNotFound,
-			Inner:      fmt.Errorf("item not found"),
-		}
+		return Response{}, &StatusError{StatusCode: http.StatusNotFound, Inner: fmt.Errorf("item not found")}
 	}
 
 	// Normalize the API response to get a consistent list of items to search.
@@ -209,19 +272,103 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 		return Response{}, err
 	}
 
-	// Delegate the search logic to a dedicated helper function.
 	if matchedItem, found := u.findItemInList(itemList); found {
-		return Response{
-			ResponseBody: matchedItem,
-			statusCode:   response.statusCode,
-		}, nil
+		return Response{ResponseBody: matchedItem, statusCode: response.statusCode}, nil
 	}
 
-	// If no match is found after checking all items, return a Not Found error.
-	return Response{}, &StatusError{
-		StatusCode: http.StatusNotFound,
-		Inner:      fmt.Errorf("item not found"),
+	return Response{}, &StatusError{StatusCode: http.StatusNotFound, Inner: fmt.Errorf("item not found")}
+}
+
+// executeCallForPagination builds an `http.Request`, lets the paginator update it, executes it, and returns the response.
+func (u *UnstructuredClient) executeCallForPagination(ctx context.Context, client *http.Client, path string, opts *RequestConfiguration, paginator pagination.Paginator) (Response, *http.Request, error) {
+	uri := buildPath(u.Server, path, opts.Parameters, opts.Query)
+	if uri == nil {
+		return Response{}, nil, fmt.Errorf("failed to build URI")
 	}
+
+	var payload []byte
+	headers := make(http.Header)
+	if opts.Body != nil {
+		jsonBody, err := json.Marshal(opts.Body)
+		if err != nil {
+			return Response{}, nil, err
+		}
+		payload = jsonBody
+		headers.Set("Content-Type", "application/json")
+	}
+
+	for k, v := range opts.Headers {
+		headers.Set(k, v)
+	}
+
+	req := &http.Request{
+		Method: opts.Method,
+		URL:    uri,
+		Header: headers,
+		Body:   io.NopCloser(bytes.NewReader(payload)),
+	}
+
+	// Let the paginator modify the request (e.g., add token).
+	if err := paginator.UpdateRequest(req); err != nil {
+		return Response{}, nil, fmt.Errorf("paginator failed to update request: %w", err)
+	}
+
+	// Now, execute the modified request by wrapping it in the full `Call` logic.
+	// This is a simplified version of the `Call` method's execution part.
+	if u.SetAuth != nil {
+		u.SetAuth(req)
+	}
+
+	if u.Debug {
+		client.Transport = &debuggingRoundTripper{
+			Transport: client.Transport,
+			Out:       os.Stdout,
+		}
+	}
+
+	resp, err := client.Do(req.WithContext(ctx))
+	if err != nil {
+		return Response{}, req, err
+	}
+	defer resp.Body.Close()
+
+	// Need to save the response in the request for the paginator to analyze headers
+	req.Response = resp
+
+	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
+	if !ok {
+		return Response{}, req, fmt.Errorf("path not found: %s", path)
+	}
+	getDoc, ok := pathItem.GetOperations().Get(strings.ToLower(opts.Method))
+	if !ok {
+		return Response{}, req, fmt.Errorf("operation not found: %s", opts.Method)
+	}
+	validStatusCodes, err := getValidResponseCode(getDoc.Responses.Codes)
+	if err != nil {
+		return Response{}, req, err
+	}
+	if !HasValidStatusCode(resp.StatusCode, validStatusCodes...) {
+		return Response{}, req, &StatusError{
+			StatusCode: resp.StatusCode,
+			Inner:      fmt.Errorf("invalid status code: %d", resp.StatusCode),
+		}
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return Response{}, req, fmt.Errorf("failed to read response body: %w", err)
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes)) // Rewind body for parsing
+
+	var responseBody any
+	if err := handleResponse(io.NopCloser(bytes.NewReader(bodyBytes)), &responseBody); err != nil {
+		return Response{}, req, fmt.Errorf("handling response: %w", err)
+	}
+
+	return Response{
+		ResponseBody: responseBody,
+		statusCode:   resp.StatusCode,
+	}, req, nil
 }
 
 // extractItemsFromResponse parses the body of an API response and extracts a list of items.

@@ -15,6 +15,7 @@ import (
 	stringset "github.com/krateoplatformops/rest-dynamic-controller/internal/text"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/comparison"
 	fgetter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/filegetter"
+	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
 	"github.com/pb33f/libopenapi"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
@@ -30,27 +31,6 @@ import (
 //}
 
 type APICallType string
-
-type AuthType string
-
-const (
-	AuthTypeBasic  AuthType = "basic"
-	AuthTypeBearer AuthType = "bearer"
-)
-
-func (a AuthType) String() string {
-	return string(a)
-}
-
-func ToType(ty string) (AuthType, error) {
-	switch ty {
-	case "basic":
-		return AuthTypeBasic, nil
-	case "bearer":
-		return AuthTypeBearer, nil
-	}
-	return "", fmt.Errorf("unknown auth type: %s", ty)
-}
 
 func buildPath(baseUrl string, path string, parameters map[string]string, query map[string]string) *url.URL {
 	for key, param := range parameters {
@@ -98,7 +78,7 @@ type UnstructuredClientInterface interface {
 	ValidateRequest(httpMethod string, path string, parameters map[string]string, query map[string]string, headers map[string]string, cookies map[string]string) error
 	RequestedBody(httpMethod string, path string) (bodys stringset.StringSet, err error)
 	RequestedParams(httpMethod string, path string) (parameters, query, headers, cookies stringset.StringSet, err error)
-	FindBy(ctx context.Context, cli *http.Client, path string, conf *RequestConfiguration) (Response, error)
+	FindBy(ctx context.Context, cli *http.Client, path string, conf *RequestConfiguration, findByAction *getter.VerbsDescription) (Response, error)
 	Call(ctx context.Context, cli *http.Client, path string, conf *RequestConfiguration) (Response, error)
 	//Validate(req *http.Request) (bool, []error) // TODO: to be re-enabled when libopenapi-validator is stable (to be renamed to ValidateRequest)
 }
