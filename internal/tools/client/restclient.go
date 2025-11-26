@@ -20,6 +20,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
+// TODO: maybe consider to wrap http.Response in our Response struct to have access to headers, status code, etc.
+// In order to have isPending method attached to a complete response object.
 type Response struct {
 	ResponseBody any
 	statusCode   int
@@ -37,6 +39,9 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 		return Response{}, fmt.Errorf("OpenAPI document scheme not initialized")
 	}
 	uri := buildPath(u.Server, path, opts.Parameters, opts.Query)
+	if uri == nil {
+		return Response{}, fmt.Errorf("failed to build URI")
+	}
 
 	// We must check if there is a server override for this specific operation
 	// so we look it up in the OpenAPI.
@@ -192,12 +197,12 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 	if findByAction == nil || findByAction.Pagination == nil {
 		// No pagination configured, perform a single call.
 		log.Println("FindBy - no pagination configured, performing single call")
-		return u.singleCallFindBy(ctx, cli, path, opts)
+		return u.CallFindBySingle(ctx, cli, path, opts)
 	}
 
 	log.Println("FindBy - pagination configured, performing paginated calls")
 
-	// Set up debug transport ONCE, before pagination starts
+	// Set up debug transport once, before pagination starts
 	if u.Debug {
 		if _, ok := cli.Transport.(*debuggingRoundTripper); !ok {
 			log.Println("FindBy - setting up debugging transport for HTTP client")
@@ -216,8 +221,8 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 	}
 	if paginator == nil {
 		// Paginator factory returned nil, treat as no pagination.
-		log.Println("FindBy - paginator is nil, performing single call, fallback")
-		return u.singleCallFindBy(ctx, cli, path, opts)
+		log.Println("FindBy - paginator is nil, not normal behavior, performing single call as fallback")
+		return u.CallFindBySingle(ctx, cli, path, opts)
 	}
 
 	paginator.Init()
@@ -229,7 +234,7 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 		log.Printf("FindBy - pagination loop iteration %d", counter)
 		// Build and execute the request with the current paginator configuration (e.g., continuationToken).
 		log.Println("FindBy - executing paginated call")
-		response, httpResp, err := u.executeCallForPagination(ctx, cli, path, opts, paginator)
+		response, httpResp, err := u.CallForPagination(ctx, cli, path, opts, paginator)
 		if err != nil {
 			return Response{}, err
 		}
@@ -274,8 +279,8 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 	}
 }
 
-// singleCallFindBy executes a non-paginated FindBy operation.
-func (u *UnstructuredClient) singleCallFindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (Response, error) {
+// CallFindBySingle executes a non-paginated FindBy operation.
+func (u *UnstructuredClient) CallFindBySingle(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (Response, error) {
 	log.Println("singleCallFindBy - executing single call FindBy operation")
 	response, err := u.Call(ctx, cli, path, opts)
 	if err != nil {
@@ -285,35 +290,69 @@ func (u *UnstructuredClient) singleCallFindBy(ctx context.Context, cli *http.Cli
 		return Response{}, &StatusError{StatusCode: http.StatusNotFound, Inner: fmt.Errorf("item not found")}
 	}
 
-	// Normalize the API response to get a consistent list of items to search.
-	// This handles multiple response shapes (e.g., raw list, wrapped list, single object).
-	// Shapes handled:
-	// 1. A standard JSON array: `[{"id": 1}, {"id": 2}]`
-	// 2. An object wrapping the array: `{"items": [{"id": 1}, {"id": 2}], "count": 2}` Note: we take the first array we find in the object as we don't know the property name in advance.
-	// 3. A single object, for endpoints that don't use an array for single-item results: `{"id": 1}` (e.g. when the collection only has one item at the moment)
+	// Extract the list of items from the response.
 	itemList, err := u.extractItemsFromResponse(response.ResponseBody)
 	if err != nil {
 		return Response{}, err
 	}
 
+	// Delegate the search logic to a dedicated helper function.
 	if matchedItem, found := u.findItemInList(itemList); found {
 		return Response{ResponseBody: matchedItem, statusCode: response.statusCode}, nil
 	}
 
+	// If no match is found after checking all items, return a Not Found error.
 	return Response{}, &StatusError{StatusCode: http.StatusNotFound, Inner: fmt.Errorf("item not found")}
 }
 
-// executeCallForPagination builds an `http.Request`, lets the paginator update it, executes it, and returns the response.
-func (u *UnstructuredClient) executeCallForPagination(ctx context.Context, client *http.Client, path string, opts *RequestConfiguration, paginator pagination.Paginator) (Response, *http.Response, error) {
+// CallForPagination builds an `http.Request`, lets the paginator update it, executes it, and returns the response.
+// TODO: to be refactored to avoid code duplication with Call method.
+func (u *UnstructuredClient) CallForPagination(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration, paginator pagination.Paginator) (Response, *http.Response, error) {
 	log.Println("Inside executeCallForPagination")
+	if u.DocScheme == nil {
+		return Response{}, nil, fmt.Errorf("OpenAPI document scheme not initialized")
+	}
 	uri := buildPath(u.Server, path, opts.Parameters, opts.Query)
 	if uri == nil {
 		return Response{}, nil, fmt.Errorf("failed to build URI")
 	}
 
+	// We must check if there is a server override for this specific operation
+	// so we look it up in the OpenAPI.
+	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
+	if !ok {
+		return Response{}, nil, fmt.Errorf("path not found: %s", path)
+	}
+	httpMethod := string(opts.Method)
+	ops := pathItem.GetOperations()
+	if ops != nil {
+		op, ok := ops.Get(strings.ToLower(httpMethod))
+		if !ok {
+			return Response{}, nil, fmt.Errorf("operation not found for method %s at path %s", httpMethod, path)
+		}
+
+		if len(op.Servers) > 0 {
+			server := op.Servers[0] // Use the first server defined for the operation (multiple servers per operation are not supported by Rest Dynamic Controller)
+			// Changed the uri since we have a server override for this operation
+			uri = buildPath(server.URL, path, opts.Parameters, opts.Query)
+		}
+	}
+
+	err := u.ValidateRequest(httpMethod, path, opts.Parameters, opts.Query, opts.Headers, opts.Cookies)
+	if err != nil {
+		return Response{}, nil, err
+	}
+
+	var response any
 	var payload []byte
+
 	headers := make(http.Header)
-	if opts.Body != nil {
+	payload = nil
+	m, ok := opts.Body.(map[string]any)
+	if !ok && opts.Body != nil {
+		return Response{}, nil, fmt.Errorf("invalid body type: %T", opts.Body)
+	}
+	if len(m) != 0 {
 		jsonBody, err := json.Marshal(opts.Body)
 		if err != nil {
 			return Response{}, nil, err
@@ -327,10 +366,19 @@ func (u *UnstructuredClient) executeCallForPagination(ctx context.Context, clien
 	}
 
 	req := &http.Request{
-		Method: opts.Method,
+		Method: httpMethod,
 		URL:    uri,
-		Header: headers,
+		Proto:  "HTTP/1.1",
 		Body:   io.NopCloser(bytes.NewReader(payload)),
+		Header: headers,
+	}
+
+	for k, v := range opts.Cookies {
+		req.AddCookie(&http.Cookie{Name: k, Value: v})
+	}
+
+	if u.SetAuth != nil {
+		u.SetAuth(req)
 	}
 
 	// Let the paginator modify the request (e.g., add token).
@@ -338,69 +386,72 @@ func (u *UnstructuredClient) executeCallForPagination(ctx context.Context, clien
 		return Response{}, nil, fmt.Errorf("paginator failed to update request: %w", err)
 	}
 
-	// Now, execute the modified request by wrapping it in the full `Call` logic.
-	// This is a simplified version of the `Call` method's execution part.
-	if u.SetAuth != nil {
-		u.SetAuth(req)
-	}
-
-	//if u.Debug {
-	//	client.Transport = &debuggingRoundTripper{
-	//		Transport: client.Transport,
-	//		Out:       os.Stdout,
-	//	}
-	//}
-
-	httpResp, err := client.Do(req.WithContext(ctx))
+	resp, err := cli.Do(req)
 	if err != nil {
-		return Response{}, httpResp, err
+		return Response{}, nil, fmt.Errorf("making request: %w", err)
 	}
-	defer httpResp.Body.Close()
+	defer resp.Body.Close()
 
-	// Need to save the response in the request for the paginator to analyze headers
-	//req.Response = resp
-
-	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
+	getDoc, ok := pathItem.GetOperations().Get(strings.ToLower(httpMethod))
 	if !ok {
-		return Response{}, httpResp, fmt.Errorf("path not found: %s", path)
-	}
-	getDoc, ok := pathItem.GetOperations().Get(strings.ToLower(opts.Method))
-	if !ok {
-		return Response{}, httpResp, fmt.Errorf("operation not found: %s", opts.Method)
+		return Response{}, nil, fmt.Errorf("operation not found: %s", httpMethod)
 	}
 	validStatusCodes, err := getValidResponseCode(getDoc.Responses.Codes)
 	if err != nil {
-		return Response{}, httpResp, err
+		return Response{}, nil, err
 	}
-	if !HasValidStatusCode(httpResp.StatusCode, validStatusCodes...) {
-		return Response{}, httpResp, &StatusError{
-			StatusCode: httpResp.StatusCode,
-			Inner:      fmt.Errorf("invalid status code: %d", httpResp.StatusCode),
+
+	if !HasValidStatusCode(resp.StatusCode, validStatusCodes...) {
+		return Response{}, nil, &StatusError{
+			StatusCode: resp.StatusCode,
+			Inner:      fmt.Errorf("invalid status code: %d", resp.StatusCode),
 		}
 	}
 
-	bodyBytes, err := io.ReadAll(httpResp.Body)
+	// Read the response body as we need to check its content length
+	// Just checking if resp.Body is nil does not work, as it can be non-nil with a zero-length body.
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return Response{}, httpResp, fmt.Errorf("failed to read response body: %w", err)
+		return Response{}, nil, fmt.Errorf("failed to read response body: %w", err)
 	}
-	httpResp.Body = io.NopCloser(bytes.NewReader(bodyBytes)) // Rewind body for parsing
-	var responseBody any
-	if err := handleResponse(io.NopCloser(bytes.NewReader(bodyBytes)), &responseBody); err != nil {
-		return Response{}, httpResp, fmt.Errorf("handling response: %w", err)
+
+	defer resp.Body.Close()
+
+	// Re-wrap body otherwise it will be closed
+	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+	// Allow empty body only 204 No Content and 304 Not Modified responses
+	statusAllowsEmpty := resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotModified
+
+	// E.g. 200 but with no content, or 201 Created with no content (error case)
+	if len(bodyBytes) == 0 && !statusAllowsEmpty {
+		return Response{}, nil, fmt.Errorf("response body is empty for unexpected status code %d", resp.StatusCode)
+	}
+
+	// For status codes that allow empty bodies (e.g., 204, 304), return nil directly, without going through handleResponse
+	if len(bodyBytes) == 0 && statusAllowsEmpty {
+		return Response{
+			ResponseBody: nil,
+			statusCode:   resp.StatusCode,
+		}, resp, nil
+	}
+
+	err = handleResponse(resp.Body, &response)
+	if err != nil {
+		return Response{}, nil, fmt.Errorf("handling response: %w", err)
 	}
 
 	return Response{
-		ResponseBody: responseBody,
-		statusCode:   httpResp.StatusCode,
-	}, httpResp, nil
+		ResponseBody: response,
+		statusCode:   resp.StatusCode,
+	}, resp, nil
 }
 
 // extractItemsFromResponse parses the body of an API response and extracts a list of items.
 // It is designed to handle three common API response patterns for list operations:
-// 1. A standard JSON array: `[{"id": 1}, {"id": 2}]`
+// 1. A standard JSON array: `[{"id": 1}, {"id": 2}]`. Note: we take the first array we find in the object as we don't know the property name in advance.
 // 2. An object wrapping the array: `{"items": [{"id": 1}, {"id": 2}]}`
-// 3. A single object, for endpoints that don't use an array for single-item results: `{"id": 1}`
-// Note: In case 2, we take the first array we find in the object as we don't know the property name in advance.
+// 3. A single object, for endpoints that don't use an array for single-item results: `{"id": 1}` (e.g. when the collection only has one item at the moment)
 func (u *UnstructuredClient) extractItemsFromResponse(body interface{}) ([]interface{}, error) {
 	// Case 1: The body is already a standard list (JSON array).
 	if list, ok := body.([]interface{}); ok {

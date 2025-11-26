@@ -33,7 +33,7 @@ func NewPaginator(config *getter.Pagination) (Paginator, error) {
 		log.Printf("In NewPaginator: creating continuationToken paginator")
 		// Ensure that the ContinuationToken config is not nil to avoid panics.
 		if config.ContinuationToken == nil {
-			return nil, fmt.Errorf("pagination type is 'continuationToken' but config block is missing")
+			return nil, fmt.Errorf("pagination type is 'continuationToken' but the continuationToken config block is missing")
 		}
 		// Ensure other pagination types block are not set (additional validation).
 		//if config.PageNumber != nil {
