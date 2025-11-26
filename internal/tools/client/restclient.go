@@ -197,6 +197,17 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 
 	log.Println("FindBy - pagination configured, performing paginated calls")
 
+	// Set up debug transport ONCE, before pagination starts
+	if u.Debug {
+		if _, ok := cli.Transport.(*debuggingRoundTripper); !ok {
+			log.Println("FindBy - setting up debugging transport for HTTP client")
+			cli.Transport = &debuggingRoundTripper{
+				Transport: cli.Transport,
+				Out:       os.Stdout,
+			}
+		}
+	}
+
 	// Create the paginator based on the configuration (e.g., continuation token).
 	paginator, err := pagination.NewPaginator(findByAction.Pagination)
 	if err != nil {
@@ -211,12 +222,18 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 
 	paginator.Init()
 
+	counter := 0
+	log.Printf("FindBy - starting pagination loop with paginator type: %T", paginator)
 	for {
+		counter++
+		log.Printf("FindBy - pagination loop iteration %d", counter)
 		// Build and execute the request with the current paginator configuration (e.g., continuationToken).
+		log.Println("FindBy - executing paginated call")
 		response, req, err := u.executeCallForPagination(ctx, cli, path, opts, paginator)
 		if err != nil {
 			return Response{}, err
 		}
+		log.Printf("FindBy - received response for pagination iteration %d", counter)
 
 		// Normalize the response to a list of items.
 		itemList, err := u.extractItemsFromResponse(response.ResponseBody)
@@ -228,6 +245,7 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 		// Search for a matching item in the current page's results.
 		if matchedItem, found := u.findItemInList(itemList); found {
 			// Found a match, return it immediately.
+			log.Printf("FindBy - found matching item on pagination iteration number: %d", counter)
 			return Response{
 				ResponseBody: matchedItem,
 				statusCode:   response.statusCode,
@@ -235,17 +253,19 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 		}
 
 		// Ask the paginator if we should continue to the next page.
-		bodyBytes, _ := json.Marshal(response.ResponseBody) // Marshal body for analysis
+		bodyBytes, _ := json.Marshal(response.ResponseBody) // Marshal body for analysis by paginator
 		shouldContinue, err := paginator.ShouldContinue(req.Response, bodyBytes)
 		if err != nil {
 			return Response{}, fmt.Errorf("error checking pagination continuation: %w", err)
 		}
 
 		if !shouldContinue {
+			log.Println("FindBy - pagination complete, no more pages to check")
 			// Paginator says we are done, break the loop.
 			break
 		}
 	}
+	log.Println("FindBy - exited pagination loop without finding a match")
 
 	// If the loop completes without finding a match, return a Not Found error.
 	return Response{}, &StatusError{
@@ -256,6 +276,7 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 
 // singleCallFindBy executes a non-paginated FindBy operation.
 func (u *UnstructuredClient) singleCallFindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (Response, error) {
+	log.Println("singleCallFindBy - executing single call FindBy operation")
 	response, err := u.Call(ctx, cli, path, opts)
 	if err != nil {
 		return Response{}, err
@@ -284,6 +305,7 @@ func (u *UnstructuredClient) singleCallFindBy(ctx context.Context, cli *http.Cli
 
 // executeCallForPagination builds an `http.Request`, lets the paginator update it, executes it, and returns the response.
 func (u *UnstructuredClient) executeCallForPagination(ctx context.Context, client *http.Client, path string, opts *RequestConfiguration, paginator pagination.Paginator) (Response, *http.Request, error) {
+	log.Println("Inside executeCallForPagination")
 	uri := buildPath(u.Server, path, opts.Parameters, opts.Query)
 	if uri == nil {
 		return Response{}, nil, fmt.Errorf("failed to build URI")
@@ -322,12 +344,12 @@ func (u *UnstructuredClient) executeCallForPagination(ctx context.Context, clien
 		u.SetAuth(req)
 	}
 
-	if u.Debug {
-		client.Transport = &debuggingRoundTripper{
-			Transport: client.Transport,
-			Out:       os.Stdout,
-		}
-	}
+	//if u.Debug {
+	//	client.Transport = &debuggingRoundTripper{
+	//		Transport: client.Transport,
+	//		Out:       os.Stdout,
+	//	}
+	//}
 
 	resp, err := client.Do(req.WithContext(ctx))
 	if err != nil {
@@ -379,6 +401,7 @@ func (u *UnstructuredClient) executeCallForPagination(ctx context.Context, clien
 // 1. A standard JSON array: `[{"id": 1}, {"id": 2}]`
 // 2. An object wrapping the array: `{"items": [{"id": 1}, {"id": 2}]}`
 // 3. A single object, for endpoints that don't use an array for single-item results: `{"id": 1}`
+// Note: In case 2, we take the first array we find in the object as we don't know the property name in advance.
 func (u *UnstructuredClient) extractItemsFromResponse(body interface{}) ([]interface{}, error) {
 	// Case 1: The body is already a standard list (JSON array).
 	if list, ok := body.([]interface{}); ok {
@@ -448,7 +471,7 @@ func (u *UnstructuredClient) findItemInList(items []interface{}) (map[string]int
 // isItemMatch checks if a single item (from an API response) matches the local resource
 // by comparing all configured identifier fields.
 // The match logic can be either "AND" (all identifiers must match) or "OR" (any identifier matches).
-// Currently, the default is "OR" and there is not a decalarative way to set it to "AND" (except via an environment variable).
+// Default is "OR" if not specified.
 func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, error) {
 	policy := strings.ToLower(u.IdentifiersMatchPolicy)
 	//log.Printf("isItemMatch - using IdentifiersMatchPolicy: %s", policy)
