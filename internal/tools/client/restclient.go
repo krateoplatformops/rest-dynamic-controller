@@ -12,8 +12,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/krateoplatformops/rest-dynamic-controller/internal/pagination"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/pagination"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/pathparsing"
 	rawyaml "gopkg.in/yaml.v3"
 
@@ -307,6 +307,8 @@ func (u *UnstructuredClient) CallFindBySingle(ctx context.Context, cli *http.Cli
 
 // CallForPagination builds an `http.Request`, lets the paginator update it, executes it, and returns the response.
 // TODO: to be refactored to avoid code duplication with Call method.
+// Prerequisite for refactor is to change the Response struct to wrap http.Response directly.
+// Differences with Call are mainly the paginator usage and the removal of debug transport setup (otherwise it would be set incrementally on each paginated call).
 func (u *UnstructuredClient) CallForPagination(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration, paginator pagination.Paginator) (Response, *http.Response, error) {
 	log.Println("Inside executeCallForPagination")
 	if u.DocScheme == nil {

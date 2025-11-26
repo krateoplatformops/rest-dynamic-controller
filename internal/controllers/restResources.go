@@ -103,7 +103,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	cli.Resource = mg
 	cli.SetAuth = clientInfo.SetAuth
 	cli.IdentifierFields = clientInfo.Resource.Identifiers // TODO: probably redundant since we pass the resource too (`cli.Resource = mg`)
-	// Loop verbs, if `findby` action set, then check if IdentifiersMatchPolicy is set and set it in the client
+	// Loop VerbsDescription, if `findby` action set, then check if IdentifiersMatchPolicy is set, if so, set it in the client
 	for _, verb := range clientInfo.Resource.VerbsDescription {
 		if verb.Action == string(apiaction.FindBy) && verb.IdentifiersMatchPolicy != "" {
 			cli.IdentifiersMatchPolicy = verb.IdentifiersMatchPolicy
