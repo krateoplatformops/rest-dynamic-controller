@@ -216,7 +216,7 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 	}
 	if paginator == nil {
 		// Paginator factory returned nil, treat as no pagination.
-		log.Println("FindBy - paginator is nil, performing single call")
+		log.Println("FindBy - paginator is nil, performing single call, fallback")
 		return u.singleCallFindBy(ctx, cli, path, opts)
 	}
 
@@ -229,7 +229,7 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 		log.Printf("FindBy - pagination loop iteration %d", counter)
 		// Build and execute the request with the current paginator configuration (e.g., continuationToken).
 		log.Println("FindBy - executing paginated call")
-		response, req, err := u.executeCallForPagination(ctx, cli, path, opts, paginator)
+		response, httpResp, err := u.executeCallForPagination(ctx, cli, path, opts, paginator)
 		if err != nil {
 			return Response{}, err
 		}
@@ -254,7 +254,7 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 
 		// Ask the paginator if we should continue to the next page.
 		bodyBytes, _ := json.Marshal(response.ResponseBody) // Marshal body for analysis by paginator
-		shouldContinue, err := paginator.ShouldContinue(req.Response, bodyBytes)
+		shouldContinue, err := paginator.ShouldContinue(httpResp, bodyBytes)
 		if err != nil {
 			return Response{}, fmt.Errorf("error checking pagination continuation: %w", err)
 		}
@@ -304,7 +304,7 @@ func (u *UnstructuredClient) singleCallFindBy(ctx context.Context, cli *http.Cli
 }
 
 // executeCallForPagination builds an `http.Request`, lets the paginator update it, executes it, and returns the response.
-func (u *UnstructuredClient) executeCallForPagination(ctx context.Context, client *http.Client, path string, opts *RequestConfiguration, paginator pagination.Paginator) (Response, *http.Request, error) {
+func (u *UnstructuredClient) executeCallForPagination(ctx context.Context, client *http.Client, path string, opts *RequestConfiguration, paginator pagination.Paginator) (Response, *http.Response, error) {
 	log.Println("Inside executeCallForPagination")
 	uri := buildPath(u.Server, path, opts.Parameters, opts.Query)
 	if uri == nil {
@@ -351,49 +351,48 @@ func (u *UnstructuredClient) executeCallForPagination(ctx context.Context, clien
 	//	}
 	//}
 
-	resp, err := client.Do(req.WithContext(ctx))
+	httpResp, err := client.Do(req.WithContext(ctx))
 	if err != nil {
-		return Response{}, req, err
+		return Response{}, httpResp, err
 	}
-	defer resp.Body.Close()
+	defer httpResp.Body.Close()
 
 	// Need to save the response in the request for the paginator to analyze headers
-	req.Response = resp
+	//req.Response = resp
 
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {
-		return Response{}, req, fmt.Errorf("path not found: %s", path)
+		return Response{}, httpResp, fmt.Errorf("path not found: %s", path)
 	}
 	getDoc, ok := pathItem.GetOperations().Get(strings.ToLower(opts.Method))
 	if !ok {
-		return Response{}, req, fmt.Errorf("operation not found: %s", opts.Method)
+		return Response{}, httpResp, fmt.Errorf("operation not found: %s", opts.Method)
 	}
 	validStatusCodes, err := getValidResponseCode(getDoc.Responses.Codes)
 	if err != nil {
-		return Response{}, req, err
+		return Response{}, httpResp, err
 	}
-	if !HasValidStatusCode(resp.StatusCode, validStatusCodes...) {
-		return Response{}, req, &StatusError{
-			StatusCode: resp.StatusCode,
-			Inner:      fmt.Errorf("invalid status code: %d", resp.StatusCode),
+	if !HasValidStatusCode(httpResp.StatusCode, validStatusCodes...) {
+		return Response{}, httpResp, &StatusError{
+			StatusCode: httpResp.StatusCode,
+			Inner:      fmt.Errorf("invalid status code: %d", httpResp.StatusCode),
 		}
 	}
 
-	bodyBytes, err := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return Response{}, req, fmt.Errorf("failed to read response body: %w", err)
+		return Response{}, httpResp, fmt.Errorf("failed to read response body: %w", err)
 	}
-	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes)) // Rewind body for parsing
-
+	httpResp.Body = io.NopCloser(bytes.NewReader(bodyBytes)) // Rewind body for parsing
 	var responseBody any
 	if err := handleResponse(io.NopCloser(bytes.NewReader(bodyBytes)), &responseBody); err != nil {
-		return Response{}, req, fmt.Errorf("handling response: %w", err)
+		return Response{}, httpResp, fmt.Errorf("handling response: %w", err)
 	}
 
 	return Response{
 		ResponseBody: responseBody,
-		statusCode:   resp.StatusCode,
-	}, req, nil
+		statusCode:   httpResp.StatusCode,
+	}, httpResp, nil
 }
 
 // extractItemsFromResponse parses the body of an API response and extracts a list of items.
