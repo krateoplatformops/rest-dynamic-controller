@@ -67,7 +67,6 @@ func (p *continuationTokenPaginator) ShouldContinue(resp *http.Response, body []
 	switch cfg.TokenIn {
 	case "header":
 		extractedToken = resp.Header.Get(cfg.TokenPath)
-		log.Printf("Continuation Token found in header, extracted '%s': %s", cfg.TokenPath, extractedToken)
 	case "body":
 		// Not implemented yet
 		//res := gjson.GetBytes(body, cfg.TokenPath)

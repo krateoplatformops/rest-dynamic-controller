@@ -1,11 +1,15 @@
 package comparison
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
+	"math"
 	"reflect"
+	"strconv"
+	"strings"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/krateoplatformops/plumbing/jqutil"
 )
 
 type Reason struct {
@@ -40,7 +44,7 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 	for key, value := range mg {
 		currentPath := append(path, key)
 		pathStr := fmt.Sprintf("%v", currentPath)
-		//log.Printf("Comparing field at path: %s", pathStr)
+		log.Printf("Comparing field at path: %s", pathStr)
 
 		rmValue, ok := rm[key]
 		if !ok {
@@ -48,14 +52,14 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 			// TODO: to be understood if this is the desired behavior
 			// Examples:
 			// Key [configurationRef] not found in rm, ignoring and continuing (this is desired, but maybe can be whitelisted)
-			//log.Printf("Key %s not found in rm, ignoring and continuing", pathStr)
+			log.Printf("Key %s not found in rm, ignoring and continuing", pathStr)
 			continue
 		}
 
 		// Handle case where one or both values are nil
 		if value == nil || rmValue == nil {
 			if value == nil && rmValue == nil {
-				//log.Printf("Both values are nil at %s, considered equal for this field", pathStr)
+				log.Printf("Both values are nil at %s, considered equal for this field", pathStr)
 				continue // Both are nil, considered equal
 			}
 			// One is nil but the other isn't, so they are not equal.
@@ -207,6 +211,8 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 				}
 			}
 		default:
+			// Here we compare primary types (string, bool, numbers)
+			log.Printf("Arrived at default case for key %s with local value '%v' and remote value '%v'", pathStr, value, rmValue)
 			ok := CompareAny(value, rmValue)
 			if !ok {
 				return ComparisonResult{
@@ -225,53 +231,150 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 }
 
 func CompareAny(a any, b any) bool {
+	log.Printf("Inside CompareAny - Initial values: '%v' and '%v'\n", a, b)
+
+	if a == nil && b == nil {
+		log.Print("Both values are nil, returning true")
+		return true
+	}
+	if a == nil || b == nil {
+		log.Print("One value is nil while the other is not, returning false")
+		return false
+	}
+
 	strA := fmt.Sprintf("%v", a)
 	strB := fmt.Sprintf("%v", b)
-	//log.Printf("Comparing values: '%s' and '%s'\n", strA, strB)
+	log.Printf("Comparing values: '%s' and '%s'\n", strA, strB)
 
-	a = jqutil.InferType(strA)
-	b = jqutil.InferType(strB)
-	//log.Printf("Normalized values: '%v' and '%v'\n", a, b)
+	a = InferType(strA)
+	b = InferType(strB)
+	log.Printf("Normalized values: '%v' and '%v'\n", a, b)
 
-	//log.Printf("Values to compare: '%v' and '%v'\n", a, b)
-	//diff := cmp.Diff(a, b)
-	//log.Printf("cmp diff:\n%s", diff)
+	log.Printf("Values to compare: '%v' and '%v'\n", a, b)
+	diff := cmp.Diff(a, b)
+	log.Printf("cmp diff:\n%s", diff)
 
 	return cmp.Equal(a, b)
 }
 
 // DeepEqual performs a deep comparison between two values.
+// This function is currently used in FindBy identifier comparisons (see isInResource in clienttools.go).
 // It is suitable for comparing also complex structures like maps and slices.
 // For maps (objects), key order does not matter.
 // For slices (arrays), element order and content are strictly compared.
-// TODO: to be dismissed
 func DeepEqual(a, b interface{}) bool {
-	// PROBABLY NOT NEEDED
+	log.Printf("Inisde DeepEqual - Values to compare: '%v' and '%v'\n", a, b)
 	// For complex types, a direct recursive comparison is correct and respects
 	// the nuances of map and slice comparison.
-	//aKind := reflect.TypeOf(a).Kind()
-	//bKind := reflect.TypeOf(b).Kind()
-	//if aKind == reflect.Map || aKind == reflect.Slice || bKind == reflect.Map || bKind == reflect.Slice {
-	//	return cmp.Equal(a, b)
-	//}
-	//
-	//// For primary types (string, bool, numbers), we use a normalization
-	//// step to handle type discrepancies, such as int64 from a CRD vs.
-	//// float64 from a JSON response.
-	//strA := fmt.Sprintf("%v", a)
-	//strB := fmt.Sprintf("%v", b)
-	//
-	//normA := jqutil.InferType(strA)
-	//normB := jqutil.InferType(strB)
 
-	//return cmp.Equal(normA, normB)
+	if a == nil && b == nil {
+		log.Print("Both values are nil, returning true")
+		return true
+	}
+	if a == nil || b == nil {
+		log.Print("One value is nil while the other is not, returning false")
+		return false
+	}
+
+	aKind := reflect.TypeOf(a).Kind()
+	bKind := reflect.TypeOf(b).Kind()
+	log.Printf("Types of values: aKind=%v, bKind=%v\n", aKind, bKind)
+	if aKind == reflect.Map || aKind == reflect.Slice || bKind == reflect.Map || bKind == reflect.Slice {
+		log.Printf("Using direct comparison for complex types: '%v' and '%v'\n", a, b)
+		diff := cmp.Diff(a, b)
+		log.Printf("cmp diff:\n%s", diff)
+		return cmp.Equal(a, b)
+	}
+
+	// For primary types (string, bool, numbers), we use a normalization
+	// step to handle type discrepancies, such as idifferent numeric types for integers and floats.
+	strA := fmt.Sprintf("%v", a)
+	strB := fmt.Sprintf("%v", b)
+
+	normA := InferType(strA)
+	normB := InferType(strB)
 
 	// DEBUG
-	//log.Print("Inside DeepEqual function\n")
-	//log.Printf("Values to compare: '%v' and '%v'\n", a, b)
-	//diff := cmp.Diff(a, b)
-	//log.Printf("cmp diff:\n%s", diff)
+	log.Print("Inside DeepEqual function, after normalization:")
+	log.Printf("Comparing normalized values: '%v' and '%v'\n", normA, normB)
 
-	return cmp.Equal(a, b)
+	diff := cmp.Diff(normA, normB)
+	log.Printf("cmp diff:\n%s", diff)
 
+	return cmp.Equal(normA, normB)
+
+}
+
+// FORK from plumbing
+
+// InferType attempts to infer and convert a string value to its most appropriate Go type.
+// It supports primitive types (bool, int32, int64, float64, string), as well as
+// structured types commonly found in Kubernetes configurations (map[string]any and []any).
+// The function first tries to parse the input as JSON. If that fails, it falls back to
+// custom parsing logic for booleans, nil/null, integers, and floats.
+// If no conversion is possible, the original string is returned.
+func InferType(value string) any {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value
+	}
+
+	decoder := json.NewDecoder(strings.NewReader(value))
+	decoder.UseNumber()
+
+	var jsonVal any
+	if err := decoder.Decode(&jsonVal); err == nil {
+		// Check if there's more data after what was decoded
+		// This ensures we only accept values where the entire string is valid JSON
+		if decoder.More() {
+			// There's more data, so this isn't a complete JSON value
+			// E.g., UUID that starts with numbers like: "90f9629b-664b-4804-a560-dd79b0c628f8"
+			// Decoder will parse "90" as a number and leave the rest which is not desired
+			// Fall through to other parsing attempts
+		} else {
+			switch v := jsonVal.(type) {
+			case json.Number:
+				if i, err := v.Int64(); err == nil {
+					if i >= math.MinInt32 && i <= math.MaxInt32 {
+						return int32(i)
+					}
+					return i
+				}
+				if f, err := v.Float64(); err == nil {
+					return f
+				}
+			default:
+				return jsonVal
+			}
+		}
+	}
+
+	if strings.EqualFold(value, "true") {
+		return true
+	}
+	if strings.EqualFold(value, "false") {
+		return false
+	}
+
+	if strings.EqualFold(value, "null") || strings.EqualFold(value, "nil") {
+		return nil
+	}
+
+	if intVal, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if intVal >= math.MinInt32 && intVal <= math.MaxInt32 {
+			return int32(intVal)
+		}
+		return intVal
+	}
+
+	if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+		if floatVal == math.Trunc(floatVal) {
+			if floatVal >= math.MinInt64 && floatVal <= math.MaxInt64 {
+				return int64(floatVal)
+			}
+		}
+		return floatVal
+	}
+
+	return value
 }

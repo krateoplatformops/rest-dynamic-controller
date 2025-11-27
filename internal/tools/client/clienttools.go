@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,8 +15,8 @@ import (
 
 	stringset "github.com/krateoplatformops/rest-dynamic-controller/internal/text"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/comparison"
-	fgetter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/filegetter"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
+	fgetter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/filegetter"
 	"github.com/pb33f/libopenapi"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
@@ -107,7 +108,7 @@ type RequestConfiguration struct {
 // isInResource is a method used during a "FindBy" operation.
 // It compares a value from an API response with the corresponding value in the local Unstructured resource.
 // It checks for the identifier's presence and correctness in 'spec' first, then falls back to checking 'status'.
-// TODO: to be evaluated for potential addition of `ResponseFieldMapping` (possiblely in future versions).
+// TODO: to be evaluated for potential addition of `ResponseFieldMapping` (possibly in future versions).
 func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath ...string) (bool, error) {
 	if u.Resource == nil {
 		return false, fmt.Errorf("resource is nil")
@@ -117,9 +118,9 @@ func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath .
 	if localValue, found, err := unstructured.NestedFieldNoCopy(u.Resource.Object, append([]string{"spec"}, fieldPath...)...); err == nil && found {
 		// If the field is found in the spec, we compare it.
 		// If it matches, we have a definitive match and can return true.
-		//log.Printf("isInResource - found in spec: localValue=%v, responseValue=%v", localValue, responseValue)
-		if comparison.CompareAny(localValue, responseValue) {
-			//log.Print("isInResource - comparison CompareAny returned true")
+		log.Printf("isInResource - found in spec: localValue=%v, responseValue=%v", localValue, responseValue)
+		if comparison.DeepEqual(localValue, responseValue) {
+			log.Print("isInResource - comparison DeepEqual returned true")
 			return true, nil
 		}
 	} else if err != nil {
@@ -131,14 +132,16 @@ func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath .
 	// Last resort check, even if it makes less sense to search for findby identifiers in status.
 	if localValue, found, err := unstructured.NestedFieldNoCopy(u.Resource.Object, append([]string{"status"}, fieldPath...)...); err == nil && found {
 		// If found in status, we compare it. This is the last chance for a match.
-		if comparison.CompareAny(localValue, responseValue) {
+		log.Printf("isInResource - found in status: localValue=%v, responseValue=%v", localValue, responseValue)
+		if comparison.DeepEqual(localValue, responseValue) {
+			log.Print("isInResource - comparison DeepEqual returned true")
 			return true, nil
 		}
 	} else if err != nil {
 		return false, fmt.Errorf("error searching for identifier in status: %w", err)
 	}
 
-	//log.Printf("isInResource - identifier not found in spec or status for path %v", fieldPath)
+	log.Printf("isInResource - identifier not found in spec or status for path %v", fieldPath)
 	// No match.
 	return false, nil
 }

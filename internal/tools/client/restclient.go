@@ -40,11 +40,12 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 	}
 	uri := buildPath(u.Server, path, opts.Parameters, opts.Query)
 	if uri == nil {
-		return Response{}, fmt.Errorf("failed to build URI")
+		return Response{}, fmt.Errorf("failed to build URI using server %s and path %s", u.Server, path)
 	}
 
 	// We must check if there is a server override for this specific operation
 	// so we look it up in the OpenAPI.
+	// TODO: make helper function for this logic
 	pathItem, ok := u.DocScheme.Model.Paths.PathItems.Get(path)
 	if !ok {
 		return Response{}, fmt.Errorf("path not found: %s", path)
@@ -61,6 +62,9 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 			server := op.Servers[0] // Use the first server defined for the operation (multiple servers per operation are not supported by Rest Dynamic Controller)
 			// Changed the uri since we have a server override for this operation
 			uri = buildPath(server.URL, path, opts.Parameters, opts.Query)
+			if uri == nil {
+				return Response{}, fmt.Errorf("failed to build URI using server %s and path %s", server.URL, path)
+			}
 		}
 	}
 
@@ -316,7 +320,7 @@ func (u *UnstructuredClient) CallForPagination(ctx context.Context, cli *http.Cl
 	}
 	uri := buildPath(u.Server, path, opts.Parameters, opts.Query)
 	if uri == nil {
-		return Response{}, nil, fmt.Errorf("failed to build URI")
+		return Response{}, nil, fmt.Errorf("failed to build URI using server %s and path %s", u.Server, path)
 	}
 
 	// We must check if there is a server override for this specific operation
@@ -337,6 +341,9 @@ func (u *UnstructuredClient) CallForPagination(ctx context.Context, cli *http.Cl
 			server := op.Servers[0] // Use the first server defined for the operation (multiple servers per operation are not supported by Rest Dynamic Controller)
 			// Changed the uri since we have a server override for this operation
 			uri = buildPath(server.URL, path, opts.Parameters, opts.Query)
+			if uri == nil {
+				return Response{}, nil, fmt.Errorf("failed to build URI using server %s and path %s", server.URL, path)
+			}
 		}
 	}
 
