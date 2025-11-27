@@ -262,8 +262,9 @@ func CompareAny(a any, b any) bool {
 // It is suitable for comparing also complex structures like maps and slices.
 // For maps (objects), key order does not matter.
 // For slices (arrays), element order and content are strictly compared.
+// Map and slice comparisons normalize nil values before comparison to avoid discrepancies due to nil entries.
 func DeepEqual(a, b interface{}) bool {
-	log.Printf("Inisde DeepEqual - Values to compare: '%v' and '%v'\n", a, b)
+	log.Printf("Inside DeepEqual - Values to compare: '%v' and '%v'\n", a, b)
 	// For complex types, a direct recursive comparison is correct and respects
 	// the nuances of map and slice comparison.
 
@@ -282,8 +283,14 @@ func DeepEqual(a, b interface{}) bool {
 	if aKind == reflect.Map || aKind == reflect.Slice || bKind == reflect.Map || bKind == reflect.Slice {
 		log.Printf("Using direct comparison for complex types: '%v' and '%v'\n", a, b)
 		diff := cmp.Diff(a, b)
-		log.Printf("cmp diff:\n%s", diff)
-		return cmp.Equal(a, b)
+		log.Printf("cmp diff before normalization:\n%s", diff)
+		// TODO: evaluate this to be configurable if needed
+		normA := normalizeAny(a)
+		normB := normalizeAny(b)
+		log.Printf("Normalized values for complex types: '%v' and '%v'\n", normA, normB)
+		diff = cmp.Diff(normA, normB)
+		log.Printf("cmp diff after normalization:\n%s", diff)
+		return cmp.Equal(normA, normB)
 	}
 
 	// For primary types (string, bool, numbers), we use a normalization
@@ -305,8 +312,7 @@ func DeepEqual(a, b interface{}) bool {
 
 }
 
-// FORK from plumbing
-
+// Note: forked from plumbing library to solve UUID case and similar cases
 // InferType attempts to infer and convert a string value to its most appropriate Go type.
 // It supports primitive types (bool, int32, int64, float64, string), as well as
 // structured types commonly found in Kubernetes configurations (map[string]any and []any).
@@ -330,7 +336,7 @@ func InferType(value string) any {
 			// There's more data, so this isn't a complete JSON value
 			// E.g., UUID that starts with numbers like: "90f9629b-664b-4804-a560-dd79b0c628f8"
 			// Decoder will parse "90" as a number and leave the rest which is not desired
-			// Fall through to other parsing attempts
+			// Instead, we want to treat the whole string as a regular string and so to avoid the partial parsing in the switch below
 		} else {
 			switch v := jsonVal.(type) {
 			case json.Number:
@@ -377,4 +383,60 @@ func InferType(value string) any {
 	}
 
 	return value
+}
+
+// normalizeMap recursively removes nil values from maps
+func normalizeMap(m map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+	for k, v := range m {
+		if v == nil {
+			continue // skip nil values
+		}
+
+		switch val := v.(type) {
+		case map[string]interface{}:
+			normalized := normalizeMap(val)
+			if len(normalized) > 0 {
+				result[k] = normalized
+			}
+		case []interface{}:
+			normalized := normalizeSlice(val)
+			if len(normalized) > 0 {
+				result[k] = normalized
+			}
+		default:
+			result[k] = v
+		}
+	}
+	return result
+}
+
+// normalizeSlice recursively removes nil values from slices
+func normalizeSlice(s []interface{}) []interface{} {
+	result := make([]interface{}, 0, len(s))
+	for _, item := range s {
+		if item == nil {
+			continue
+		}
+		if m, ok := item.(map[string]interface{}); ok {
+			normalized := normalizeMap(m)
+			if len(normalized) > 0 {
+				result = append(result, normalized)
+			}
+		} else {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func normalizeAny(value any) any {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		return normalizeMap(v)
+	case []interface{}:
+		return normalizeSlice(v)
+	default:
+		return value
+	}
 }
