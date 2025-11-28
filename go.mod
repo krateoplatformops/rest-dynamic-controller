@@ -3,12 +3,13 @@ module github.com/krateoplatformops/rest-dynamic-controller
 go 1.25.0
 
 require (
+	github.com/go-andiamo/splitter v1.2.5
 	github.com/go-logr/logr v1.4.2
 	github.com/gobuffalo/flect v1.0.3
 	github.com/google/go-cmp v0.7.0
 	github.com/krateoplatformops/plumbing v0.6.1
 	github.com/krateoplatformops/snowplow v0.0.0-20250311104630-6e215130151f
-	github.com/krateoplatformops/unstructured-runtime v0.2.7
+	github.com/krateoplatformops/unstructured-runtime v0.3.0
 	github.com/pb33f/libopenapi v0.28.0
 	github.com/stretchr/testify v1.11.1
 	gopkg.in/yaml.v3 v3.0.1

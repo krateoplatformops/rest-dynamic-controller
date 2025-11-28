@@ -98,11 +98,12 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		return controller.ExternalObservation{}, err
 	}
 
+	// Set client properties
 	cli.Debug = meta.IsVerbose(mg)
 	cli.Resource = mg
 	cli.SetAuth = clientInfo.SetAuth
 	cli.IdentifierFields = clientInfo.Resource.Identifiers // TODO: probably redundant since we pass the resource too (`cli.Resource = mg`)
-	// Loop verbs, if `findby` action set, then set the IdentifiersMatchPolicy
+	// Loop VerbsDescription, if `findby` action set, then check if IdentifiersMatchPolicy is set, if so, set it in the client
 	for _, verb := range clientInfo.Resource.VerbsDescription {
 		if verb.Action == string(apiaction.FindBy) && verb.IdentifiersMatchPolicy != "" {
 			cli.IdentifiersMatchPolicy = verb.IdentifiersMatchPolicy
@@ -110,14 +111,13 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			break
 		}
 	}
-	log.Debug("IdentifiersMatchPolicy set for client", "policy", cli.IdentifiersMatchPolicy)
 
 	var response restclient.Response
 	// Tries to tries to build the `get` action API Call, with the given statusFields and specFields values.
 	// If it is able to validate the `get` action request, returns true
 	isKnown := builder.IsResourceKnown(cli, clientInfo, mg)
 	if isKnown {
-		// Getting the external resource by its identifier (e.g GET /resources/{id}).
+		// Resource is known: getting the external resource by its identifier (e.g GET /resources/{id}).
 		apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Get)
 		if apiCall == nil || callInfo == nil {
 			log.Error(fmt.Errorf("API action get not found"), "action", apiaction.Get)
@@ -153,9 +153,10 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			return controller.ExternalObservation{}, err
 		}
 	} else {
-		// Resource is not known, we try to find it by its fields with a `findby` action,
+		// Resource is not known, we try to find it by its identifiers fields with a `findby` action,
 		// typically searching in the items returned by a "list" API call (e.g GET /resources).
-		// This is typically used when the resource does not have an identifier yet, e.g: before creation (first ever reconcile loop).
+		// This is typically used when the resource does not have an server-side generated identifier (e.g., ID, UUID) yet,
+		// for instance before creation (in the first ever reconcile loop).
 		apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.FindBy)
 		if apiCall == nil {
 			if !unstructuredtools.IsConditionSet(mg, condition.Creating()) && !unstructuredtools.IsConditionSet(mg, condition.Available()) {
@@ -215,7 +216,8 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		}
 	}
 
-	// Response can be nil if the API does not return anything on get with a proper status code (204 No Content, 304 Not Modified).
+	// Response can be nil if the API does not return anything with a proper status code (204 No Content, 304 Not Modified) on an Observe call.
+	// In this case, we assume the resource is up-to-date.
 	if response.ResponseBody == nil {
 		cond := condition.Available()
 		cond.Message = "Resource is assumed to be up-to-date. Returned body is nil."
@@ -238,6 +240,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			ResourceUpToDate: true,
 		}, nil
 	}
+	// If we have a response body, we try to populate status fields and check if the resource is up-to-date by comparing spec vs remote resource.
 	b, ok := response.ResponseBody.(map[string]interface{})
 	if !ok {
 		log.Error(fmt.Errorf("body is not an object"), "Performing REST call")

@@ -14,6 +14,7 @@ import (
 
 	stringset "github.com/krateoplatformops/rest-dynamic-controller/internal/text"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/comparison"
+	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
 	fgetter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/filegetter"
 	"github.com/pb33f/libopenapi"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
@@ -30,27 +31,6 @@ import (
 //}
 
 type APICallType string
-
-type AuthType string
-
-const (
-	AuthTypeBasic  AuthType = "basic"
-	AuthTypeBearer AuthType = "bearer"
-)
-
-func (a AuthType) String() string {
-	return string(a)
-}
-
-func ToType(ty string) (AuthType, error) {
-	switch ty {
-	case "basic":
-		return AuthTypeBasic, nil
-	case "bearer":
-		return AuthTypeBearer, nil
-	}
-	return "", fmt.Errorf("unknown auth type: %s", ty)
-}
 
 func buildPath(baseUrl string, path string, parameters map[string]string, query map[string]string) *url.URL {
 	for key, param := range parameters {
@@ -98,7 +78,7 @@ type UnstructuredClientInterface interface {
 	ValidateRequest(httpMethod string, path string, parameters map[string]string, query map[string]string, headers map[string]string, cookies map[string]string) error
 	RequestedBody(httpMethod string, path string) (bodys stringset.StringSet, err error)
 	RequestedParams(httpMethod string, path string) (parameters, query, headers, cookies stringset.StringSet, err error)
-	FindBy(ctx context.Context, cli *http.Client, path string, conf *RequestConfiguration) (Response, error)
+	FindBy(ctx context.Context, cli *http.Client, path string, conf *RequestConfiguration, findByAction *getter.VerbsDescription) (Response, error)
 	Call(ctx context.Context, cli *http.Client, path string, conf *RequestConfiguration) (Response, error)
 	//Validate(req *http.Request) (bool, []error) // TODO: to be re-enabled when libopenapi-validator is stable (to be renamed to ValidateRequest)
 }
@@ -127,7 +107,7 @@ type RequestConfiguration struct {
 // isInResource is a method used during a "FindBy" operation.
 // It compares a value from an API response with the corresponding value in the local Unstructured resource.
 // It checks for the identifier's presence and correctness in 'spec' first, then falls back to checking 'status'.
-// TODO: to be evaluated for potential addition of `ResponseFieldMapping` (possiblely in future versions).
+// TODO: to be evaluated for potential addition of `ResponseFieldMapping` (possibly in future versions).
 func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath ...string) (bool, error) {
 	if u.Resource == nil {
 		return false, fmt.Errorf("resource is nil")
@@ -138,8 +118,8 @@ func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath .
 		// If the field is found in the spec, we compare it.
 		// If it matches, we have a definitive match and can return true.
 		//log.Printf("isInResource - found in spec: localValue=%v, responseValue=%v", localValue, responseValue)
-		if comparison.CompareAny(localValue, responseValue) {
-			//log.Print("isInResource - comparison CompareAny returned true")
+		if comparison.DeepEqual(localValue, responseValue) {
+			//log.Print("isInResource - comparison DeepEqual returned true")
 			return true, nil
 		}
 	} else if err != nil {
@@ -151,7 +131,9 @@ func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath .
 	// Last resort check, even if it makes less sense to search for findby identifiers in status.
 	if localValue, found, err := unstructured.NestedFieldNoCopy(u.Resource.Object, append([]string{"status"}, fieldPath...)...); err == nil && found {
 		// If found in status, we compare it. This is the last chance for a match.
-		if comparison.CompareAny(localValue, responseValue) {
+		//log.Printf("isInResource - found in status: localValue=%v, responseValue=%v", localValue, responseValue)
+		if comparison.DeepEqual(localValue, responseValue) {
+			//log.Print("isInResource - comparison DeepEqual returned true")
 			return true, nil
 		}
 	} else if err != nil {

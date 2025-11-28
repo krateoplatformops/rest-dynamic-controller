@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
-	restclient "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client"
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/auth"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,33 +17,67 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+// Pagination defines the pagination strategy for a "findby" action.
+// Currently, only 'continuationToken' is supported.
+type Pagination struct {
+	// Type specifies the pagination strategy. Currently, only 'continuationToken' is supported.
+	Type string `json:"type"`
+	// Configuration for 'continuationToken' pagination. Required if type is 'continuationToken'.
+	ContinuationToken *ContinuationTokenConfig `json:"continuationToken,omitempty"`
+	// (Future) Configuration for 'pageNumber' pagination.
+	//PageNumber *PageNumberConfig `json:"pageNumber,omitempty"`
+	// (Future) Configuration for 'offset' pagination.
+	//Offset *OffsetConfig `json:"offset,omitempty"`
+}
+
+// ContinuationTokenConfig holds the specific settings for token-based pagination.
+type ContinuationTokenConfig struct {
+	// Request: defines how to include the pagination token in the API request.
+	Request ContinuationTokenRequest `json:"request"`
+	// Response: defines how to extract the pagination token from the API response.
+	Response ContinuationTokenResponse `json:"response"`
+}
+
+// ContinuationTokenRequest defines how to include the pagination token in the API request.
+type ContinuationTokenRequest struct {
+	// Where the token is located: "query", "header" or "body". Currently, only "query" is supported.
+	TokenIn string `json:"tokenIn"`
+	// The path or name of the query parameter, header, or body field.
+	// For query parameters and headers, this is simply the name.
+	// For body fields, this should be a JSON path.
+	TokenPath string `json:"tokenPath"`
+}
+
+// ContinuationTokenResponse defines how to extract the pagination token from the API response.
+type ContinuationTokenResponse struct {
+	// Where the token is located: "header" or "body". Currently, only "header" is supported.
+	TokenIn string `json:"tokenIn"`
+	// The path or name of the header or body field.
+	// For headers, this is simply the name.
+	// For body fields, this should be a JSON path.
+	TokenPath string `json:"tokenPath"`
+}
+
+// PageNumberConfig is a placeholder for future page number pagination settings.
+//type PageNumberConfig struct{}
+
+// OffsetConfig is a placeholder for future offset pagination settings.
+//type OffsetConfig struct{}
+
 // RequestFieldMappingItem defines a single mapping from a path parameter, query parameter or body field
 // to a field in the Custom Resource.
 type RequestFieldMappingItem struct {
 	// InPath defines the name of the path parameter to be mapped.
 	// Only one of 'inPath', 'inQuery' or 'inBody' can be set.
 	InPath string `json:"inPath,omitempty"`
-
 	// InQuery defines the name of the query parameter to be mapped.
 	// Only one of 'inPath', 'inQuery' or 'inBody' can be set.
 	InQuery string `json:"inQuery,omitempty"`
-
 	// InBody defines the name of the body parameter to be mapped.
 	// Only one of 'inPath', 'inQuery' or 'inBody' can be set.
 	InBody string `json:"inBody,omitempty"`
-
 	// InCustomResource defines the JSONPath to the field within the Custom Resource that holds the value.
 	// For example: 'spec.name' or 'status.metadata.id'.
-	InCustomResource string `json:"inCustomResource"`
-}
-
-// ResponseFieldMappingItem defines a single mapping from a response body field
-// to a field in the Custom Resource's spec for comparison.
-type ResponseFieldMappingItem struct {
-	// InResponseBody defines the JSONPath to the field within the API response body that holds the actual state.
-	InResponseBody string `json:"inResponseBody"`
-
-	// InCustomResource defines the JSONPath to the field within the Custom Resource's spec that holds the desired state.
 	InCustomResource string `json:"inCustomResource"`
 }
 
@@ -63,6 +97,9 @@ type VerbsDescription struct {
 	// - 'AND': all identifiers must match.
 	// - 'OR': at least one identifier must match (the default behavior).
 	IdentifiersMatchPolicy string `json:"identifiersMatchPolicy,omitempty"`
+	// Pagination defines the pagination strategy for 'findby' actions. To be set only for 'findby' actions.
+	// If not set, no pagination will be used.
+	Pagination *Pagination `json:"pagination,omitempty"`
 }
 
 type Resource struct {
@@ -282,7 +319,7 @@ func (g *dynamicGetter) processConfigurationRef(un *unstructured.Unstructured, i
 // It returns an error if the authentication object is not valid.
 func parseAuthentication(authMethods map[string]interface{}, dyn dynamic.Interface, info *Info) error {
 	for authTypeStr, authMethod := range authMethods {
-		authType, err := restclient.ToType(authTypeStr)
+		authType, err := auth.ToType(authTypeStr)
 		if err != nil {
 			return err
 		}
@@ -293,7 +330,7 @@ func parseAuthentication(authMethods map[string]interface{}, dyn dynamic.Interfa
 		}
 
 		switch authType {
-		case restclient.AuthTypeBasic:
+		case auth.AuthTypeBasic:
 			usernameRef, ok, err := unstructured.NestedStringMap(authMethodMap, "usernameRef")
 			if err != nil {
 				return err
@@ -333,7 +370,7 @@ func parseAuthentication(authMethods map[string]interface{}, dyn dynamic.Interfa
 			}
 
 			return nil
-		case restclient.AuthTypeBearer:
+		case auth.AuthTypeBearer:
 			tokenRef, ok, err := unstructured.NestedStringMap(authMethodMap, "tokenRef")
 			if err != nil {
 				return err

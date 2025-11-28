@@ -709,7 +709,7 @@ func TestFindBy(t *testing.T) {
 				Transport: mockTransport,
 			}
 
-			result, err := client.FindBy(context.Background(), testClient, tt.path, tt.opts)
+			result, err := client.FindBy(context.Background(), testClient, tt.path, tt.opts, nil)
 
 			if tt.expectedError != "" {
 				require.Error(t, err)

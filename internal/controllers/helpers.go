@@ -13,6 +13,7 @@ import (
 
 // isCRUpdated checks if the CR was updated by comparing the fields in the CR with the response from the API call, if existing cr fields are different from the response, it returns false
 func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (comparison.ComparisonResult, error) {
+	//log.Print("isCRUpdated - starting comparison between mg spec and rm")
 	if mg == nil {
 		return comparison.ComparisonResult{
 			IsEqual: false,
