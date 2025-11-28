@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"os"
@@ -200,16 +199,15 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration, findByAction *getter.VerbsDescription) (Response, error) {
 	if findByAction == nil || findByAction.Pagination == nil {
 		// No pagination configured, perform a single call.
-		log.Println("FindBy - no pagination configured, performing single call")
+		//log.Println("FindBy - no pagination configured, performing single call")
 		return u.CallFindBySingle(ctx, cli, path, opts)
 	}
 
-	log.Println("FindBy - pagination configured, performing paginated calls")
+	//log.Println("FindBy - pagination configured, performing paginated calls")
 
 	// Set up debug transport once, before pagination starts
 	if u.Debug {
 		if _, ok := cli.Transport.(*debuggingRoundTripper); !ok {
-			log.Println("FindBy - setting up debugging transport for HTTP client")
 			cli.Transport = &debuggingRoundTripper{
 				Transport: cli.Transport,
 				Out:       os.Stdout,
@@ -220,29 +218,28 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 	// Create the paginator based on the configuration (e.g., continuation token).
 	paginator, err := pagination.NewPaginator(findByAction.Pagination)
 	if err != nil {
-		log.Printf("FindBy - failed to create paginator: %v", err)
 		return Response{}, fmt.Errorf("failed to create paginator: %w", err)
 	}
 	if paginator == nil {
 		// Paginator factory returned nil, treat as no pagination.
-		log.Println("FindBy - paginator is nil, not normal behavior, performing single call as fallback")
+		//log.Println("FindBy - paginator is nil, not normal behavior, performing single call as fallback")
 		return u.CallFindBySingle(ctx, cli, path, opts)
 	}
 
 	paginator.Init()
 
-	counter := 0
-	log.Printf("FindBy - starting pagination loop with paginator type: %T", paginator)
+	//counter := 0
+	//log.Printf("FindBy - starting pagination loop with paginator type: %T", paginator)
 	for {
-		counter++
-		log.Printf("FindBy - pagination loop iteration %d", counter)
+		//counter++
 		// Build and execute the request with the current paginator configuration (e.g., continuationToken).
-		log.Println("FindBy - executing paginated call")
+		//log.Printf("FindBy - pagination loop iteration %d", counter)
+		//log.Println("FindBy - executing paginated call")
 		response, httpResp, err := u.CallForPagination(ctx, cli, path, opts, paginator)
 		if err != nil {
 			return Response{}, err
 		}
-		log.Printf("FindBy - received response for pagination iteration %d", counter)
+		//log.Printf("FindBy - received response for pagination iteration %d", counter)
 
 		// Normalize the response to a list of items.
 		itemList, err := u.extractItemsFromResponse(response.ResponseBody)
@@ -254,7 +251,7 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 		// Search for a matching item in the current page's results.
 		if matchedItem, found := u.findItemInList(itemList); found {
 			// Found a match, return it immediately.
-			log.Printf("FindBy - found matching item on pagination iteration number: %d", counter)
+			//log.Printf("FindBy - found matching item on pagination iteration number: %d", counter)
 			return Response{
 				ResponseBody: matchedItem,
 				statusCode:   response.statusCode,
@@ -269,12 +266,12 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 		}
 
 		if !shouldContinue {
-			log.Println("FindBy - pagination complete, no more pages to check")
+			//log.Println("FindBy - pagination complete, no more pages to check")
 			// Paginator says we are done, break the loop.
 			break
 		}
 	}
-	log.Println("FindBy - exited pagination loop without finding a match")
+	//log.Println("FindBy - exited pagination loop without finding a match")
 
 	// If the loop completes without finding a match, return a Not Found error.
 	return Response{}, &StatusError{
@@ -285,7 +282,6 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 
 // CallFindBySingle executes a non-paginated FindBy operation.
 func (u *UnstructuredClient) CallFindBySingle(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration) (Response, error) {
-	log.Println("singleCallFindBy - executing single call FindBy operation")
 	response, err := u.Call(ctx, cli, path, opts)
 	if err != nil {
 		return Response{}, err
@@ -314,7 +310,6 @@ func (u *UnstructuredClient) CallFindBySingle(ctx context.Context, cli *http.Cli
 // Prerequisite for refactor is to change the Response struct to wrap http.Response directly.
 // Differences with Call are mainly the paginator usage and the removal of debug transport setup (otherwise it would be set incrementally on each paginated call).
 func (u *UnstructuredClient) CallForPagination(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration, paginator pagination.Paginator) (Response, *http.Response, error) {
-	log.Println("Inside executeCallForPagination")
 	if u.DocScheme == nil {
 		return Response{}, nil, fmt.Errorf("OpenAPI document scheme not initialized")
 	}

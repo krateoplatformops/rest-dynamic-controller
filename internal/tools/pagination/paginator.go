@@ -2,7 +2,6 @@ package pagination
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
@@ -24,13 +23,13 @@ type Paginator interface {
 // NewPaginator is a factory that returns the correct paginator based on config.
 func NewPaginator(config *getter.Pagination) (Paginator, error) {
 	if config == nil {
-		log.Printf("In NewPaginator: no pagination config provided")
+		//log.Printf("NewPaginator: no pagination config provided")
 		return nil, nil // No pagination configured
 	}
 
 	switch config.Type {
 	case "continuationToken":
-		log.Printf("In NewPaginator: creating continuationToken paginator")
+		//log.Printf("NewPaginator: creating continuationToken paginator")
 		// Ensure that the ContinuationToken config is not nil to avoid panics.
 		if config.ContinuationToken == nil {
 			return nil, fmt.Errorf("pagination type is 'continuationToken' but the continuationToken config block is missing")

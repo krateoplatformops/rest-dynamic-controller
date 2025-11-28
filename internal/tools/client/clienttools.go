@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -118,9 +117,9 @@ func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath .
 	if localValue, found, err := unstructured.NestedFieldNoCopy(u.Resource.Object, append([]string{"spec"}, fieldPath...)...); err == nil && found {
 		// If the field is found in the spec, we compare it.
 		// If it matches, we have a definitive match and can return true.
-		log.Printf("isInResource - found in spec: localValue=%v, responseValue=%v", localValue, responseValue)
+		//log.Printf("isInResource - found in spec: localValue=%v, responseValue=%v", localValue, responseValue)
 		if comparison.DeepEqual(localValue, responseValue) {
-			log.Print("isInResource - comparison DeepEqual returned true")
+			//log.Print("isInResource - comparison DeepEqual returned true")
 			return true, nil
 		}
 	} else if err != nil {
@@ -132,16 +131,16 @@ func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath .
 	// Last resort check, even if it makes less sense to search for findby identifiers in status.
 	if localValue, found, err := unstructured.NestedFieldNoCopy(u.Resource.Object, append([]string{"status"}, fieldPath...)...); err == nil && found {
 		// If found in status, we compare it. This is the last chance for a match.
-		log.Printf("isInResource - found in status: localValue=%v, responseValue=%v", localValue, responseValue)
+		//log.Printf("isInResource - found in status: localValue=%v, responseValue=%v", localValue, responseValue)
 		if comparison.DeepEqual(localValue, responseValue) {
-			log.Print("isInResource - comparison DeepEqual returned true")
+			//log.Print("isInResource - comparison DeepEqual returned true")
 			return true, nil
 		}
 	} else if err != nil {
 		return false, fmt.Errorf("error searching for identifier in status: %w", err)
 	}
 
-	log.Printf("isInResource - identifier not found in spec or status for path %v", fieldPath)
+	//log.Printf("isInResource - identifier not found in spec or status for path %v", fieldPath)
 	// No match.
 	return false, nil
 }

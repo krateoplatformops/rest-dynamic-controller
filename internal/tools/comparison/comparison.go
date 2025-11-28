@@ -3,7 +3,6 @@ package comparison
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"reflect"
 	"strconv"
@@ -44,7 +43,7 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 	for key, value := range mg {
 		currentPath := append(path, key)
 		pathStr := fmt.Sprintf("%v", currentPath)
-		log.Printf("Comparing field at path: %s", pathStr)
+		//log.Printf("Comparing field at path: %s", pathStr)
 
 		rmValue, ok := rm[key]
 		if !ok {
@@ -52,14 +51,14 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 			// TODO: to be understood if this is the desired behavior
 			// Examples:
 			// Key [configurationRef] not found in rm, ignoring and continuing (this is desired, but maybe can be whitelisted)
-			log.Printf("Key %s not found in rm, ignoring and continuing", pathStr)
+			//log.Printf("Key %s not found in rm, ignoring and continuing", pathStr)
 			continue
 		}
 
 		// Handle case where one or both values are nil
 		if value == nil || rmValue == nil {
 			if value == nil && rmValue == nil {
-				log.Printf("Both values are nil at %s, considered equal for this field", pathStr)
+				//log.Printf("Both values are nil at %s, considered equal for this field", pathStr)
 				continue // Both are nil, considered equal
 			}
 			// One is nil but the other isn't, so they are not equal.
@@ -212,7 +211,7 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 			}
 		default:
 			// Here we compare primary types (string, bool, numbers)
-			log.Printf("Arrived at default case for key %s with local value '%v' and remote value '%v'", pathStr, value, rmValue)
+			//log.Printf("Arrived at default case for key %s with local value '%v' and remote value '%v'", pathStr, value, rmValue)
 			ok := CompareAny(value, rmValue)
 			if !ok {
 				return ComparisonResult{
@@ -231,28 +230,26 @@ func CompareExisting(mg map[string]interface{}, rm map[string]interface{}, path 
 }
 
 func CompareAny(a any, b any) bool {
-	log.Printf("Inside CompareAny - Initial values: '%v' and '%v'\n", a, b)
+	//log.Printf("CompareAny - Initial values: '%v' and '%v'\n", a, b)
 
 	if a == nil && b == nil {
-		log.Print("Both values are nil, returning true")
 		return true
 	}
 	if a == nil || b == nil {
-		log.Print("One value is nil while the other is not, returning false")
 		return false
 	}
 
 	strA := fmt.Sprintf("%v", a)
 	strB := fmt.Sprintf("%v", b)
-	log.Printf("Comparing values: '%s' and '%s'\n", strA, strB)
+	//log.Printf("Comparing values: '%s' and '%s'\n", strA, strB)
 
 	a = InferType(strA)
 	b = InferType(strB)
-	log.Printf("Normalized values: '%v' and '%v'\n", a, b)
+	//log.Printf("Normalized values: '%v' and '%v'\n", a, b)
 
-	log.Printf("Values to compare: '%v' and '%v'\n", a, b)
-	diff := cmp.Diff(a, b)
-	log.Printf("cmp diff:\n%s", diff)
+	//log.Printf("Values to compare: '%v' and '%v'\n", a, b)
+	//diff := cmp.Diff(a, b)
+	//log.Printf("cmp diff:\n%s", diff)
 
 	return cmp.Equal(a, b)
 }
@@ -264,32 +261,30 @@ func CompareAny(a any, b any) bool {
 // For slices (arrays), element order and content are strictly compared.
 // Map and slice comparisons normalize nil values before comparison to avoid discrepancies due to nil entries.
 func DeepEqual(a, b interface{}) bool {
-	log.Printf("Inside DeepEqual - Values to compare: '%v' and '%v'\n", a, b)
-	// For complex types, a direct recursive comparison is correct and respects
-	// the nuances of map and slice comparison.
+	//log.Printf("DeepEqual - Values to compare: '%v' and '%v'\n", a, b)
 
 	if a == nil && b == nil {
-		log.Print("Both values are nil, returning true")
 		return true
 	}
 	if a == nil || b == nil {
-		log.Print("One value is nil while the other is not, returning false")
 		return false
 	}
 
 	aKind := reflect.TypeOf(a).Kind()
 	bKind := reflect.TypeOf(b).Kind()
-	log.Printf("Types of values: aKind=%v, bKind=%v\n", aKind, bKind)
+	//log.Printf("Types of values: aKind=%v, bKind=%v\n", aKind, bKind)
+	// For complex types, a direct recursive comparison is correct and respects
+	// the nuances of map and slice comparison.
 	if aKind == reflect.Map || aKind == reflect.Slice || bKind == reflect.Map || bKind == reflect.Slice {
-		log.Printf("Using direct comparison for complex types: '%v' and '%v'\n", a, b)
-		diff := cmp.Diff(a, b)
-		log.Printf("cmp diff before normalization:\n%s", diff)
+		//log.Printf("Using direct comparison for complex types: '%v' and '%v'\n", a, b)
+		//diff := cmp.Diff(a, b)
+		//log.Printf("cmp diff before normalization:\n%s", diff)
 		// TODO: evaluate this to be configurable if needed
 		normA := normalizeAny(a)
 		normB := normalizeAny(b)
-		log.Printf("Normalized values for complex types: '%v' and '%v'\n", normA, normB)
-		diff = cmp.Diff(normA, normB)
-		log.Printf("cmp diff after normalization:\n%s", diff)
+		//log.Printf("Normalized values for complex types: '%v' and '%v'\n", normA, normB)
+		//diff = cmp.Diff(normA, normB)
+		//log.Printf("cmp diff after normalization:\n%s", diff)
 		return cmp.Equal(normA, normB)
 	}
 
@@ -302,11 +297,10 @@ func DeepEqual(a, b interface{}) bool {
 	normB := InferType(strB)
 
 	// DEBUG
-	log.Print("Inside DeepEqual function, after normalization:")
-	log.Printf("Comparing normalized values: '%v' and '%v'\n", normA, normB)
-
-	diff := cmp.Diff(normA, normB)
-	log.Printf("cmp diff:\n%s", diff)
+	//log.Print("Inside DeepEqual function, after normalization:")
+	//log.Printf("Comparing normalized values: '%v' and '%v'\n", normA, normB)
+	//diff := cmp.Diff(normA, normB)
+	//log.Printf("cmp diff:\n%s", diff)
 
 	return cmp.Equal(normA, normB)
 
