@@ -367,9 +367,13 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 		// Clear status if findby action is available to force resource discovery on next observe.
 		// This prevents using stale identifiers (e.g., status.id) when the external resource
-		// was deleted and recreated asynchronously (202 pending) with a different response body object w.r.t CR spec.
-		// This ensurues the next Observe will use `findby` to locate the resource instead of attempting a `get` with an outdated identifier.
-		// This is the case when the Create action endpoint return 202 and a response body wihout the id needed for the subsequent `get` action, effectively causing a reconciliation deadlock.
+		// was deleted and recreated asynchronously (202 pending)
+		// with a different response body object w.r.t CR spec.
+		// This ensures the next Observe will use `findby` to locate the resource
+		// instead of attempting a `get` with an outdated identifier.
+		// This is the case when the Create action endpoint returns status code 202
+		// and a response body without the `id` needed for the subsequent `get` action (e.g., GET /resource/{id}),
+		// effectively causing a reconciliation deadlock due to outdated identifier kept in status.
 		if hasFindBy {
 			unstructured.RemoveNestedField(mg.Object, "status")
 			log.Debug("Pending with findby action available, cleared status to force findby lookup on next reconciliation", "kind", mg.GetKind())
