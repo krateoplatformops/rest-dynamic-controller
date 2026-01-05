@@ -318,6 +318,10 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
+	// Check if the RestDefinition has a findby action configured.
+	// This will be used to determine if we should clear status on pending responses.
+	hasFindBy := hasFindByAction(clientInfo)
+
 	cli, err := restclient.BuildClient(ctx, h.dynamicClient, clientInfo.URL)
 	if err != nil {
 		log.Error(err, "Building REST client")
@@ -360,6 +364,19 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	if response.IsPending() {
 		log.Debug("External resource is pending", "kind", mg.GetKind())
+
+		// Clear status if findby action is available to force resource discovery on next observe.
+		// This prevents using stale identifiers (e.g., status.id) when the external resource
+		// was deleted and recreated asynchronously (202 pending) with a different response body object w.r.t CR spec.
+		// This ensurues the next Observe will use `findby` to locate the resource instead of attempting a `get` with an outdated identifier.
+		// This is the case when the Create action endpoint return 202 and a response body wihout the id needed for the subsequent `get` action, effectively causing a reconciliation deadlock.
+		if hasFindBy {
+			unstructured.RemoveNestedField(mg.Object, "status")
+			log.Debug("Pending with findby action available, cleared status to force findby lookup on next reconciliation", "kind", mg.GetKind())
+		} else {
+			log.Debug("Pending but no findby action available, no need to clear status.", "kind", mg.GetKind())
+		}
+
 		err = unstructuredtools.SetConditions(mg, customcondition.Pending())
 		if err != nil {
 			log.Error(err, "Setting condition")

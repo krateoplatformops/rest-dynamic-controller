@@ -3,6 +3,7 @@ package restResources
 import (
 	"fmt"
 
+	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/client/apiaction"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/comparison"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/deepcopy"
 	getter "github.com/krateoplatformops/rest-dynamic-controller/internal/tools/definitiongetter"
@@ -99,4 +100,19 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 		}
 	}
 	return nil
+}
+
+// hasFindByAction checks if the RestDefinition has a findby action configured.
+func hasFindByAction(info *getter.Info) bool {
+	if info == nil || info.Resource.VerbsDescription == nil {
+		return false
+	}
+
+	for _, verb := range info.Resource.VerbsDescription {
+		if verb.Action == string(apiaction.FindBy) {
+			return true
+		}
+	}
+
+	return false
 }

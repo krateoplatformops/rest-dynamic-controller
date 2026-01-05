@@ -806,3 +806,108 @@ func TestPopulateStatusFields(t *testing.T) {
 		})
 	}
 }
+
+func TestHasFindByAction(t *testing.T) {
+	tests := []struct {
+		name     string
+		info     *getter.Info
+		expected bool
+	}{
+		{
+			name: "has findby action",
+			info: &getter.Info{
+				Resource: getter.Resource{
+					VerbsDescription: []getter.VerbsDescription{
+						{Action: "create"},
+						{Action: "get"},
+						{Action: "findby"},
+						{Action: "delete"},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "no findby action - only basic CRUD",
+			info: &getter.Info{
+				Resource: getter.Resource{
+					VerbsDescription: []getter.VerbsDescription{
+						{Action: "create"},
+						{Action: "get"},
+						{Action: "update"},
+						{Action: "delete"},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "findby action is the only verb",
+			info: &getter.Info{
+				Resource: getter.Resource{
+					VerbsDescription: []getter.VerbsDescription{
+						{Action: "findby"},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "empty VerbsDescription",
+			info: &getter.Info{
+				Resource: getter.Resource{
+					VerbsDescription: []getter.VerbsDescription{},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "nil VerbsDescription",
+			info: &getter.Info{
+				Resource: getter.Resource{
+					VerbsDescription: nil,
+				},
+			},
+			expected: false,
+		},
+		{
+			name:     "nil info",
+			info:     nil,
+			expected: false,
+		},
+		{
+			name: "case sensitivity check - should not match",
+			info: &getter.Info{
+				Resource: getter.Resource{
+					VerbsDescription: []getter.VerbsDescription{
+						{Action: "FINDBY"},
+						{Action: "FindBy"},
+						{Action: "findBy"},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "partial match should not count - findbyname",
+			info: &getter.Info{
+				Resource: getter.Resource{
+					VerbsDescription: []getter.VerbsDescription{
+						{Action: "findbyname"},
+						{Action: "getfindby"},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := hasFindByAction(tt.info)
+			if result != tt.expected {
+				t.Errorf("hasFindByAction() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
