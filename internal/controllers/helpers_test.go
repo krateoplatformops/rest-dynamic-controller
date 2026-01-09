@@ -807,106 +807,90 @@ func TestPopulateStatusFields(t *testing.T) {
 	}
 }
 
-func TestHasFindByAction(t *testing.T) {
+func TestClearCRStatusFields(t *testing.T) {
 	tests := []struct {
 		name     string
-		info     *getter.Info
-		expected bool
+		mg       *unstructured.Unstructured
+		expected map[string]interface{}
 	}{
 		{
-			name: "has findby action",
-			info: &getter.Info{
-				Resource: getter.Resource{
-					VerbsDescription: []getter.VerbsDescription{
-						{Action: "create"},
-						{Action: "get"},
-						{Action: "findby"},
-						{Action: "delete"},
+			name: "clear status with existing status fields",
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "v1",
+					"kind":       "Test",
+					"metadata": map[string]interface{}{
+						"name": "test-resource",
+					},
+					"spec": map[string]interface{}{
+						"field1": "value1",
+					},
+					"status": map[string]interface{}{
+						"id":    "123",
+						"state": "active",
 					},
 				},
 			},
-			expected: true,
+			expected: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Test",
+				"metadata": map[string]interface{}{
+					"name": "test-resource",
+				},
+				"spec": map[string]interface{}{
+					"field1": "value1",
+				},
+			},
 		},
 		{
-			name: "no findby action - only basic CRUD",
-			info: &getter.Info{
-				Resource: getter.Resource{
-					VerbsDescription: []getter.VerbsDescription{
-						{Action: "create"},
-						{Action: "get"},
-						{Action: "update"},
-						{Action: "delete"},
+			name: "clear status when no status exists",
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "v1",
+					"kind":       "Test",
+					"spec": map[string]interface{}{
+						"field1": "value1",
 					},
 				},
 			},
-			expected: false,
-		},
-		{
-			name: "findby action is the only verb",
-			info: &getter.Info{
-				Resource: getter.Resource{
-					VerbsDescription: []getter.VerbsDescription{
-						{Action: "findby"},
-					},
+			expected: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Test",
+				"spec": map[string]interface{}{
+					"field1": "value1",
 				},
 			},
-			expected: true,
 		},
 		{
-			name: "empty VerbsDescription",
-			info: &getter.Info{
-				Resource: getter.Resource{
-					VerbsDescription: []getter.VerbsDescription{},
+			name: "clear status with empty status",
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec":   map[string]interface{}{"field1": "value1"},
+					"status": map[string]interface{}{},
 				},
 			},
-			expected: false,
-		},
-		{
-			name: "nil VerbsDescription",
-			info: &getter.Info{
-				Resource: getter.Resource{
-					VerbsDescription: nil,
-				},
+			expected: map[string]interface{}{
+				"spec": map[string]interface{}{"field1": "value1"},
 			},
-			expected: false,
 		},
 		{
-			name:     "nil info",
-			info:     nil,
-			expected: false,
-		},
-		{
-			name: "case sensitivity check - should not match",
-			info: &getter.Info{
-				Resource: getter.Resource{
-					VerbsDescription: []getter.VerbsDescription{
-						{Action: "FINDBY"},
-						{Action: "FindBy"},
-						{Action: "findBy"},
-					},
-				},
-			},
-			expected: false,
-		},
-		{
-			name: "partial match should not count - findbyname",
-			info: &getter.Info{
-				Resource: getter.Resource{
-					VerbsDescription: []getter.VerbsDescription{
-						{Action: "findbyname"},
-						{Action: "getfindby"},
-					},
-				},
-			},
-			expected: false,
+			name:     "nil unstructured - should not panic",
+			mg:       nil,
+			expected: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := hasFindByAction(tt.info)
-			if result != tt.expected {
-				t.Errorf("hasFindByAction() = %v, want %v", result, tt.expected)
+			clearCRStatusFields(tt.mg)
+
+			if tt.mg == nil {
+				// Test passed if no panic occurred
+				return
+			}
+
+			if diff := cmp.Diff(tt.expected, tt.mg.Object); diff != "" {
+				t.Errorf("clearCRStatusFields() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
