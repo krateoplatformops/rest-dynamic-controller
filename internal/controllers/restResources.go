@@ -157,6 +157,8 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		// typically searching in the items returned by a "list" API call (e.g GET /resources).
 		// This is typically used when the resource does not have an server-side generated identifier (e.g., ID, UUID) yet,
 		// for instance before creation (in the first ever reconcile loop).
+
+		// This branch is also hit when the resource does not support a `get` action at all but supports only a `findby` action for the observe phase.
 		apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.FindBy)
 		if apiCall == nil {
 			if !unstructuredtools.IsConditionSet(mg, condition.Creating()) && !unstructuredtools.IsConditionSet(mg, condition.Available()) {
@@ -341,6 +343,12 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Error(err, "Performing REST call")
 		return err
 	}
+
+	// Clear status before populating with new values to ensure no stale values remain.
+	// This prevents, for instance, using outdated identifiers (e.g., status.id from a previously deleted
+	// external resource) that would cause reconciliation deadlock on subsequent Observe operations.
+	clearCRStatusFields(mg)
+	log.Debug("Cleared status before populating with create response", "kind", mg.GetKind())
 
 	if response.ResponseBody != nil {
 		body := response.ResponseBody
