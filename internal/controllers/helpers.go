@@ -102,7 +102,7 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 }
 
 // clearCRStatusFields removes the status field from the Custom Resource.
-// This is used during Create operations to ensure no stale fields remain.
+// This is used during Create and Update operations to ensure no stale fields remain.
 func clearCRStatusFields(mg *unstructured.Unstructured) {
 	if mg == nil {
 		return

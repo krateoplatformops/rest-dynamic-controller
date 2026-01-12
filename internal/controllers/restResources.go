@@ -251,7 +251,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	if b != nil {
 		err = populateStatusFields(clientInfo, mg, b)
 		if err != nil {
-			log.Error(err, "Updating status fields (identifiers and additionalStatusFields)")
+			log.Error(err, "Populating status fields (identifiers and additionalStatusFields)")
 			return controller.ExternalObservation{}, err
 		}
 
@@ -360,12 +360,15 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 		err = populateStatusFields(clientInfo, mg, b)
 		if err != nil {
-			log.Error(err, "Updating identifiers")
+			log.Error(err, "Populating status fields (identifiers and additionalStatusFields)")
 			return err
 		}
+	} else {
+		log.Debug("Create response has no body, status will remain empty until discovered by next observe", "kind", mg.GetKind())
 	}
 	log.Debug("Creating external resource", "kind", mg.GetKind())
 
+	// Set condition for pending responses to indicate async creation operation in progress.
 	if response.IsPending() {
 		log.Debug("External resource is pending", "kind", mg.GetKind())
 		err = unstructuredtools.SetConditions(mg, customcondition.Pending())
@@ -373,7 +376,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 			log.Error(err, "Setting condition")
 			return err
 		}
-	} else {
+	} else { // Set creating condition if not pending
 		err = unstructuredtools.SetConditions(mg, condition.Creating())
 		if err != nil {
 			log.Error(err, "Setting condition")
@@ -436,7 +439,13 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
+	// Clear status before populating with new values, unless the response has empty body.
+	// If response body is empty (e.g., 204 responses), we keep the existing status
+	// since the API indicates success without returning data (edge case).
 	if response.ResponseBody != nil {
+		clearCRStatusFields(mg)
+		log.Debug("Cleared status before populating with update response", "kind", mg.GetKind())
+
 		body := response.ResponseBody
 		b, ok := body.(map[string]interface{})
 		if !ok {
@@ -446,11 +455,24 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 
 		err = populateStatusFields(clientInfo, mg, b)
 		if err != nil {
-			log.Error(err, "Updating identifiers")
+			log.Error(err, "Populating status fields (identifiers and additionalStatusFields)")
+			return err
+		}
+	} else {
+		log.Debug("Update response has no body, keeping existing status", "kind", mg.GetKind())
+	}
+	log.Debug("Updating external resource", "kind", mg.GetKind())
+
+	// Set condition for pending responses to indicate async update operation in progress.
+	if response.IsPending() {
+		log.Debug("External resource update is pending", "kind", mg.GetKind())
+		err = unstructuredtools.SetConditions(mg, customcondition.Pending())
+		if err != nil {
+			log.Error(err, "Setting condition")
 			return err
 		}
 	}
-	log.Debug("Updating external resource", "kind", mg.GetKind())
+	// TODO: add condition
 
 	mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
