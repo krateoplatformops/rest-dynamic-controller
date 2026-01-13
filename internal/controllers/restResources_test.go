@@ -259,7 +259,7 @@ func TestController(t *testing.T) {
 				log.Debug("Creating chart url info getter.", "error", err)
 			}
 
-			handler = NewHandler(cfg.Client().RESTConfig(), log, swg, pluralizer)
+			handler = NewHandler(cfg.Client().RESTConfig(), log, swg, pluralizer, true)
 
 			return ctx
 		}).

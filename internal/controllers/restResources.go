@@ -30,7 +30,7 @@ var (
 	ErrStatusNotFound = errors.New("status not found")
 )
 
-func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter, pluralizer pluralizer.PluralizerInterface) controller.ExternalClient {
+func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter, pluralizer pluralizer.PluralizerInterface, prettyJSONDebug bool) controller.ExternalClient {
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		log.Error(err, "Creating dynamic client.")
@@ -49,6 +49,7 @@ func NewHandler(cfg *rest.Config, log logging.Logger, swg getter.Getter, plurali
 		dynamicClient:     dyn,
 		discoveryClient:   dis,
 		swaggerInfoGetter: swg,
+		prettyJSONDebug:   prettyJSONDebug,
 	}
 }
 
@@ -58,6 +59,7 @@ type handler struct {
 	dynamicClient     dynamic.Interface
 	discoveryClient   *discovery.DiscoveryClient
 	swaggerInfoGetter getter.Getter
+	prettyJSONDebug   bool
 }
 
 func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (controller.ExternalObservation, error) {
@@ -100,6 +102,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 
 	// Set client properties
 	cli.Debug = meta.IsVerbose(mg)
+	cli.PrettyJSON = h.prettyJSONDebug
 	cli.Resource = mg
 	cli.SetAuth = clientInfo.SetAuth
 	cli.IdentifierFields = clientInfo.Resource.Identifiers // TODO: probably redundant since we pass the resource too (`cli.Resource = mg`)
@@ -326,6 +329,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 	cli.Debug = meta.IsVerbose(mg)
+	cli.PrettyJSON = h.prettyJSONDebug
 	cli.SetAuth = clientInfo.SetAuth
 
 	apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Create)
@@ -420,6 +424,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 	cli.Debug = meta.IsVerbose(mg)
+	cli.PrettyJSON = h.prettyJSONDebug
 	cli.SetAuth = clientInfo.SetAuth
 
 	apiCall, callInfo, err := builder.APICallBuilder(cli, clientInfo, apiaction.Update)
@@ -525,6 +530,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 	cli.Debug = meta.IsVerbose(mg)
+	cli.PrettyJSON = h.prettyJSONDebug
 	cli.SetAuth = clientInfo.SetAuth
 
 	_, err = unstructuredtools.GetFieldsFromUnstructured(mg, "status")
