@@ -471,8 +471,13 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 			log.Error(err, "Setting condition")
 			return err
 		}
+	} else { // Set creating condition if not pending (using Creating condition for updates as well since no Update condition exists)
+		err = unstructuredtools.SetConditions(mg, condition.Creating())
+		if err != nil {
+			log.Error(err, "Setting condition")
+			return err
+		}
 	}
-	// TODO: add condition
 
 	mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
