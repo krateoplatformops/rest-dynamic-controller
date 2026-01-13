@@ -47,6 +47,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Echo Build Version
+        run: echo "BUILD_VERSION=${{ github.sha }}"
+
       - name: Build and NOT push
         id: build
         uses: docker/build-push-action@v5
@@ -54,6 +60,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: false
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_VERSION=${{ github.sha }}
 
   test:
     runs-on: ubuntu-latest

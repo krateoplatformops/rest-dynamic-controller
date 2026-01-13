@@ -42,6 +42,8 @@ func main() {
 		"absolute path to the kubeconfig file")
 	debug := flag.Bool("debug",
 		env.Bool("REST_CONTROLLER_DEBUG", false), "dump verbose output")
+	prettyJSONDebug := flag.Bool("pretty-json-debug",
+		env.Bool("REST_CONTROLLER_PRETTY_JSON_DEBUG", false), "globally enable pretty-print JSON formatting in HTTP debug output (response bodies)")
 	workers := flag.Int("workers", env.Int("REST_CONTROLLER_WORKERS", 5), "number of workers")
 	resyncInterval := flag.Duration("resync-interval",
 		env.Duration("REST_CONTROLLER_RESYNC_INTERVAL", time.Minute*3), "resync interval")
@@ -110,6 +112,7 @@ func main() {
 
 	log.WithValues("build", Build).
 		WithValues("debug", *debug).
+		WithValues("prettyJSONDebug", *prettyJSONDebug).
 		WithValues("resyncInterval", *resyncInterval).
 		WithValues("group", *resourceGroup).
 		WithValues("version", *resourceVersion).
@@ -121,7 +124,7 @@ func main() {
 		WithValues("workers", *workers).
 		Info("Starting.", "serviceName", serviceName)
 
-	handler = restResources.NewHandler(cfg, log, swg, *pluralizer)
+	handler = restResources.NewHandler(cfg, log, swg, *pluralizer, *prettyJSONDebug)
 	if handler == nil {
 		log.Error(fmt.Errorf("handler is nil"), "Creating handler for controller.")
 		os.Exit(1)
