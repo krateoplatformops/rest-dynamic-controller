@@ -1,12 +1,13 @@
 builds:
 - id: rest-dynamic-controller
   #main: main.go
-  dir: . 
+  dir: .
   env:
   - CGO_ENABLED=0
   ldflags:
   - -s -w
   - -extldflags "-static"
+  - -X main.Build={{.Git.Commit}}
 defaultPlatforms:
 - linux/arm64
 #- linux/amd64

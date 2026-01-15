@@ -88,10 +88,11 @@ type UnstructuredClient struct {
 	IdentifiersMatchPolicy string
 	Resource               *unstructured.Unstructured
 	//Doc                   libopenapi.Document         // Parsed OpenAPI document by libopenapi, needed for http request validation. TODO: to be re-enabled when libopenapi-validator is stable
-	DocScheme *libopenapi.DocumentModel[v3.Document] // OpenAPI document model (high-level)
-	Server    string
-	Debug     bool
-	SetAuth   func(req *http.Request)
+	DocScheme  *libopenapi.DocumentModel[v3.Document] // OpenAPI document model (high-level)
+	Server     string
+	Debug      bool
+	PrettyJSON bool
+	SetAuth    func(req *http.Request)
 	//Validator             Validator 				    // Validator for request validation. TODO: to be re-enabled when libopenapi-validator is stable
 }
 
@@ -107,40 +108,38 @@ type RequestConfiguration struct {
 // isInResource is a method used during a "FindBy" operation.
 // It compares a value from an API response with the corresponding value in the local Unstructured resource.
 // It checks for the identifier's presence and correctness in 'spec' first, then falls back to checking 'status'.
-// TODO: to be evaluated for potential addition of `ResponseFieldMapping` (possibly in future versions).
+// TODO: to be re-evaluated and possibly modified for potential addition of `ResponseFieldMapping` (possibly in future versions).
 func (u *UnstructuredClient) isInResource(responseValue interface{}, fieldPath ...string) (bool, error) {
 	if u.Resource == nil {
 		return false, fmt.Errorf("resource is nil")
 	}
 
-	// Check 1: Look for the identifier in the 'spec'.
-	if localValue, found, err := unstructured.NestedFieldNoCopy(u.Resource.Object, append([]string{"spec"}, fieldPath...)...); err == nil && found {
-		// If the field is found in the spec, we compare it.
-		// If it matches, we have a definitive match and can return true.
-		//log.Printf("isInResource - found in spec: localValue=%v, responseValue=%v", localValue, responseValue)
-		if comparison.DeepEqual(localValue, responseValue) {
-			//log.Print("isInResource - comparison DeepEqual returned true")
-			return true, nil
-		}
-	} else if err != nil {
+	// Check 1: Look for the identifier in 'spec'.
+	specPath := append([]string{"spec"}, fieldPath...)
+	localValue, found, err := unstructured.NestedFieldNoCopy(u.Resource.Object, specPath...)
+	if err != nil {
 		return false, fmt.Errorf("error searching for identifier in spec: %w", err)
 	}
-
-	// Check 2: If the identifier was not found in spec, or if it was found but did not match,
-	// we proceed to check the 'status'. This is common for server-assigned identifiers.
-	// Last resort check, even if it makes less sense to search for findby identifiers in status.
-	if localValue, found, err := unstructured.NestedFieldNoCopy(u.Resource.Object, append([]string{"status"}, fieldPath...)...); err == nil && found {
-		// If found in status, we compare it. This is the last chance for a match.
-		//log.Printf("isInResource - found in status: localValue=%v, responseValue=%v", localValue, responseValue)
-		if comparison.DeepEqual(localValue, responseValue) {
-			//log.Print("isInResource - comparison DeepEqual returned true")
-			return true, nil
-		}
-	} else if err != nil {
-		return false, fmt.Errorf("error searching for identifier in status: %w", err)
+	// If the field is found in the spec, we compare it.
+	// If it matches, we have a definitive match and can return true.
+	if found && comparison.DeepEqual(localValue, responseValue) {
+		return true, nil
 	}
 
-	//log.Printf("isInResource - identifier not found in spec or status for path %v", fieldPath)
+	// Check 2: If the identifier was not found in 'spec', or if it was found but did not match,
+	// we proceed to check the 'status'. This is common for server-assigned identifiers
+	// and not with identifiers normally used for a findby operation.
+	// Last resort check, even if it makes less sense to search for findby identifiers in 'status'.
+	statusPath := append([]string{"status"}, fieldPath...)
+	localValue, found, err = unstructured.NestedFieldNoCopy(u.Resource.Object, statusPath...)
+	if err != nil {
+		return false, fmt.Errorf("error searching for identifier in status: %w", err)
+	}
+	// If found in status, we compare it. This is the last chance for a match.
+	if found && comparison.DeepEqual(localValue, responseValue) {
+		return true, nil
+	}
+
 	// No match.
 	return false, nil
 }

@@ -108,8 +108,9 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 
 	if u.Debug {
 		cli.Transport = &debuggingRoundTripper{
-			Transport: cli.Transport,
-			Out:       os.Stdout,
+			Transport:  cli.Transport,
+			Out:        os.Stdout,
+			PrettyJSON: u.PrettyJSON,
 		}
 	}
 
@@ -199,18 +200,16 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path string, opts *RequestConfiguration, findByAction *getter.VerbsDescription) (Response, error) {
 	if findByAction == nil || findByAction.Pagination == nil {
 		// No pagination configured, perform a single call.
-		//log.Println("FindBy - no pagination configured, performing single call")
 		return u.CallFindBySingle(ctx, cli, path, opts)
 	}
-
-	//log.Println("FindBy - pagination configured, performing paginated calls")
 
 	// Set up debug transport once, before pagination starts
 	if u.Debug {
 		if _, ok := cli.Transport.(*debuggingRoundTripper); !ok {
 			cli.Transport = &debuggingRoundTripper{
-				Transport: cli.Transport,
-				Out:       os.Stdout,
+				Transport:  cli.Transport,
+				Out:        os.Stdout,
+				PrettyJSON: u.PrettyJSON,
 			}
 		}
 	}
@@ -222,24 +221,17 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 	}
 	if paginator == nil {
 		// Paginator factory returned nil, treat as no pagination.
-		//log.Println("FindBy - paginator is nil, not normal behavior, performing single call as fallback")
 		return u.CallFindBySingle(ctx, cli, path, opts)
 	}
 
 	paginator.Init()
 
-	//counter := 0
-	//log.Printf("FindBy - starting pagination loop with paginator type: %T", paginator)
 	for {
-		//counter++
 		// Build and execute the request with the current paginator configuration (e.g., continuationToken).
-		//log.Printf("FindBy - pagination loop iteration %d", counter)
-		//log.Println("FindBy - executing paginated call")
 		response, httpResp, err := u.CallForPagination(ctx, cli, path, opts, paginator)
 		if err != nil {
 			return Response{}, err
 		}
-		//log.Printf("FindBy - received response for pagination iteration %d", counter)
 
 		// Normalize the response to a list of items.
 		itemList, err := u.extractItemsFromResponse(response.ResponseBody)
@@ -251,7 +243,6 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 		// Search for a matching item in the current page's results.
 		if matchedItem, found := u.findItemInList(itemList); found {
 			// Found a match, return it immediately.
-			//log.Printf("FindBy - found matching item on pagination iteration number: %d", counter)
 			return Response{
 				ResponseBody: matchedItem,
 				statusCode:   response.statusCode,
@@ -266,12 +257,10 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 		}
 
 		if !shouldContinue {
-			//log.Println("FindBy - pagination complete, no more pages to check")
 			// Paginator says we are done, break the loop.
 			break
 		}
 	}
-	//log.Println("FindBy - exited pagination loop without finding a match")
 
 	// If the loop completes without finding a match, return a Not Found error.
 	return Response{}, &StatusError{
@@ -528,26 +517,21 @@ func (u *UnstructuredClient) findItemInList(items []interface{}) (map[string]int
 // Default is "OR" if not specified.
 func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, error) {
 	policy := strings.ToLower(u.IdentifiersMatchPolicy)
-	//log.Printf("isItemMatch - using IdentifiersMatchPolicy: %s", policy)
 	if policy == "" || (policy != "and" && policy != "or") {
 		policy = "or" // Default to "or" if not specified or invalid
-		//log.Printf("isItemMatch - defaulting IdentifiersMatchPolicy to: %s", policy)
 	}
 
 	// If no identifiers are specified, no match is possible.
 	if len(u.IdentifierFields) == 0 {
 		// TODO: probably warning or error log
-		//log.Print("isItemMatch - no IdentifierFields specified, cannot perform match\n")
 		return false, nil
 	}
 
 	switch policy {
 	case "and":
-		//log.Print("isItemMatch - AND logic\n")
 		// AND Logic: Return false on the first failed match.
 		for _, ide := range u.IdentifierFields {
 			pathSegments, err := pathparsing.ParsePath(ide)
-			//log.Printf("Checking identifier: %s", ide)
 			if err != nil || len(pathSegments) == 0 {
 				continue
 			}
@@ -567,35 +551,26 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 				// If any identifier does not match, it's not an AND match.
 				return false, nil
 			}
-			//log.Printf("isItemMatch - identifier %s matched", ide)
 		}
 
 		// If the loop completes, it means all identifiers matched (AND logic succeeded).
-		//log.Print("isItemMatch - AND logic succeeded, all identifiers matched\n")
 		return true, nil
 	case "or":
-		//log.Print("isItemMatch - using OR logic for identifier matching\n")
 		// OR Logic (default): Return true on the first successful identifier match.
 		for _, ide := range u.IdentifierFields {
-			//log.Print("isItemMatch - OR logic\n")
-			//log.Printf("Checking identifier: %s", ide)
 
 			pathSegments, err := pathparsing.ParsePath(ide)
-			//log.Printf("Parsed path segments: %v", pathSegments)
 			if err != nil || len(pathSegments) == 0 {
 				continue
 			}
 
 			val, found, err := unstructured.NestedFieldNoCopy(itemMap, pathSegments...)
-			//log.Printf("isItemMatch - checking identifier %s: value=%v, found=%v, err=%v", ide, val, found, err)
-			//log.Print("isItemMatch, after successful check\n")
 			if err != nil || !found {
 				// If field is not found or there is an error, it's not a match for this identifier, so we continue.
 				continue
 			}
 
 			ok, err := u.isInResource(val, pathSegments...)
-			//log.Printf("isItemMatch - comparison result for identifier %s: ok=%v, err=%v", ide, ok, err)
 			if err != nil {
 				// A hard error during comparison should be propagated up. // TODO: is this the desired behavior for OR logic?
 				return false, err
@@ -607,11 +582,9 @@ func (u *UnstructuredClient) isItemMatch(itemMap map[string]interface{}) (bool, 
 			}
 		}
 
-		//log.Print("isItemMatch - no identifiers matched\n")
 		// If the loop completes, no identifiers matched (OR logic failed).
 		return false, nil
 	default:
-		//log.Printf("isItemMatch - unknown IdentifiersMatchPolicy: %s", policy)
 		return false, fmt.Errorf("unknown identifier match policy: %s", u.IdentifiersMatchPolicy)
 	}
 }
@@ -659,8 +632,9 @@ func handleResponse(rc io.ReadCloser, response any) error {
 }
 
 type debuggingRoundTripper struct {
-	Transport http.RoundTripper
-	Out       io.Writer
+	Transport  http.RoundTripper
+	Out        io.Writer
+	PrettyJSON bool
 }
 
 func (d *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -681,14 +655,99 @@ func (d *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 		return resp, err
 	}
 
-	b, err = httputil.DumpResponse(resp, req.URL.Query().Get("watch") != "true")
-	if err != nil {
-		return nil, err
+	// Dump the response: use pretty JSON if enabled, otherwise use httputil.DumpResponse
+	if d.PrettyJSON {
+		err = d.dumpResponseWithPrettyJSON(resp, req.URL.Query().Get("watch") != "true")
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		b, err := httputil.DumpResponse(resp, req.URL.Query().Get("watch") != "true")
+		if err != nil {
+			return nil, err
+		}
+		d.Out.Write(b)
+		d.Out.Write([]byte{'\n'})
 	}
-	d.Out.Write(b)
+
+	return resp, nil
+}
+
+// dumpResponseWithPrettyJSON dumps the HTTP response with pretty-printed JSON body if applicable
+func (d *debuggingRoundTripper) dumpResponseWithPrettyJSON(resp *http.Response, dumpBody bool) error {
+	if resp == nil {
+		return fmt.Errorf("response is nil")
+	}
+
+	// Dump status line and headers first
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "%s %s\r\n", resp.Proto, resp.Status)
+	resp.Header.Write(&b)
+	b.WriteString("\r\n")
+
+	if !dumpBody || resp.Body == nil {
+		// No body to dump
+		d.Out.Write(b.Bytes())
+		d.Out.Write([]byte{'\n'})
+		return nil
+	}
+
+	// Read the body
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading response body: %w", err)
+	}
+
+	// Close the original body and replace it with a new reader so the response can still be read
+	resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	// Check if the body is JSON and pretty-print it
+	prettyBody, isJSON := tryPrettyPrintJSON(bodyBytes)
+	if isJSON {
+		b.Write(prettyBody)
+	} else { // Fallback
+		// Not JSON or invalid JSON, write as-is
+		b.Write(bodyBytes)
+	}
+
+	b.WriteString("\r\n")
+	d.Out.Write(b.Bytes())
 	d.Out.Write([]byte{'\n'})
 
-	return resp, err
+	return nil
+}
+
+// tryPrettyPrintJSON attempts to pretty-print JSON with colors. Returns the formatted bytes and true if successful.
+func tryPrettyPrintJSON(data []byte) ([]byte, bool) {
+	// Quick check: if empty or doesn't start with { or [, it's not JSON
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		// Empty body
+		return data, false
+	}
+
+	firstChar := trimmed[0]
+	if firstChar != '{' && firstChar != '[' {
+		// Not JSON
+		return data, false
+	}
+
+	// Try to unmarshal to verify it's valid JSON
+	var jsonData interface{}
+	if err := json.Unmarshal(data, &jsonData); err != nil {
+		// Not valid JSON
+		return data, false
+	}
+
+	// Pretty-print with 2-space indentation
+	prettyJSON, err := json.MarshalIndent(jsonData, "", "  ")
+	if err != nil {
+		// Marshaling failed (shouldn't happen if unmarshal succeeded, but be safe)
+		return data, false
+	}
+
+	return prettyJSON, true
 }
 
 // TODO: to be re-enabled when libopenapi-validator is stable
