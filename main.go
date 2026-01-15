@@ -38,31 +38,45 @@ var (
 
 func main() {
 	// Flags
-	kubeconfig := flag.String("kubeconfig", env.String("KUBECONFIG", ""),
+	kubeconfig := flag.String("kubeconfig",
+		env.String("KUBECONFIG", ""),
 		"absolute path to the kubeconfig file")
 	debug := flag.Bool("debug",
-		env.Bool("REST_CONTROLLER_DEBUG", false), "dump verbose output")
+		env.Bool("REST_CONTROLLER_DEBUG", false),
+		"dump verbose output")
 	prettyJSONDebug := flag.Bool("pretty-json-debug",
-		env.Bool("REST_CONTROLLER_PRETTY_JSON_DEBUG", false), "globally enable pretty-print JSON formatting in HTTP debug output (response bodies)")
-	workers := flag.Int("workers", env.Int("REST_CONTROLLER_WORKERS", 5), "number of workers")
+		env.Bool("REST_CONTROLLER_PRETTY_JSON_DEBUG", false),
+		"globally enable pretty-print JSON formatting in HTTP debug output (response bodies)")
+	workers := flag.Int("workers",
+		env.Int("REST_CONTROLLER_WORKERS", 5),
+		"number of workers")
 	resyncInterval := flag.Duration("resync-interval",
-		env.Duration("REST_CONTROLLER_RESYNC_INTERVAL", time.Minute*3), "resync interval")
+		env.Duration("REST_CONTROLLER_RESYNC_INTERVAL", time.Minute*3),
+		"resync interval")
 	resourceGroup := flag.String("group",
-		env.String("REST_CONTROLLER_GROUP", ""), "resource api group")
+		env.String("REST_CONTROLLER_GROUP", ""),
+		"resource api group")
 	resourceVersion := flag.String("version",
-		env.String("REST_CONTROLLER_VERSION", ""), "resource api version")
+		env.String("REST_CONTROLLER_VERSION", ""),
+		"resource api version")
 	resourceName := flag.String("resource",
-		env.String("REST_CONTROLLER_RESOURCE", ""), "resource plural name")
+		env.String("REST_CONTROLLER_RESOURCE", ""),
+		"resource plural name")
 	namespace := flag.String("namespace",
-		env.String("REST_CONTROLLER_NAMESPACE", ""), "namespace to watch, empty for all namespaces")
+		env.String("REST_CONTROLLER_NAMESPACE", ""),
+		"namespace to watch, empty for all namespaces")
 	maxErrorRetryInterval := flag.Duration("max-error-retry-interval",
-		env.Duration("REST_CONTROLLER_MAX_ERROR_RETRY_INTERVAL", 90*time.Second), "The maximum interval between retries when an error occurs. This should be less than the half of the resync interval.")
+		env.Duration("REST_CONTROLLER_MAX_ERROR_RETRY_INTERVAL", 90*time.Second),
+		"The maximum interval between retries when an error occurs. This should be less than the half of the resync interval.")
 	minErrorRetryInterval := flag.Duration("min-error-retry-interval",
-		env.Duration("REST_CONTROLLER_MIN_ERROR_RETRY_INTERVAL", 1*time.Second), "The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval.")
+		env.Duration("REST_CONTROLLER_MIN_ERROR_RETRY_INTERVAL", 1*time.Second),
+		"The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval.")
 	maxErrorRetry := flag.Int("max-error-retries",
-		env.Int("REST_CONTROLLER_MAX_ERROR_RETRIES", 5), "How many times to retry the processing of a resource when an error occurs before giving up and dropping the resource.")
+		env.Int("REST_CONTROLLER_MAX_ERROR_RETRIES", 5),
+		"How many times to retry the processing of a resource when an error occurs before giving up and dropping the resource.")
 	metricsServerPort := flag.Int("metrics-server-port",
-		env.Int("REST_CONTROLLER_METRICS_SERVER_PORT", 0), "The address to bind the metrics server to. If empty, metrics server is disabled.")
+		env.Int("REST_CONTROLLER_METRICS_SERVER_PORT", 0),
+		"The address to bind the metrics server to. If empty, metrics server is disabled.")
 
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
