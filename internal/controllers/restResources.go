@@ -351,7 +351,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	// Clear status before populating with new values to ensure no stale values remain.
 	// This prevents, for instance, using outdated identifiers (e.g., status.id from a previously deleted
 	// external resource) that would cause reconciliation deadlock on subsequent Observe operations.
-	clearCRStatusFields(mg)
+	clearStatusFields(mg)
 	log.Debug("Cleared status before populating with create response", "kind", mg.GetKind())
 
 	if response.ResponseBody != nil {
@@ -448,7 +448,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	// If response body is empty (e.g., 204 responses), we keep the existing status
 	// since the API indicates success without returning data (edge case).
 	if response.ResponseBody != nil {
-		clearCRStatusFields(mg)
+		clearStatusFields(mg)
 		log.Debug("Cleared status before populating with update response", "kind", mg.GetKind())
 
 		body := response.ResponseBody

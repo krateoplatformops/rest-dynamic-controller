@@ -2,7 +2,6 @@ package restResources
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/comparison"
 	"github.com/krateoplatformops/rest-dynamic-controller/internal/tools/deepcopy"
@@ -102,10 +101,9 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 	return nil
 }
 
-// clearCRStatusFields removes the status field from the Custom Resource.
+// clearStatusFields removes the status field from the Custom Resource.
 // This is used during Create and Update operations to ensure no stale fields remain.
-func clearCRStatusFields(mg *unstructured.Unstructured) {
-	log.Print("Inside clearCRStatusFields")
+func clearStatusFields(mg *unstructured.Unstructured) {
 	if mg == nil {
 		return
 	}

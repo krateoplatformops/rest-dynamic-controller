@@ -882,7 +882,7 @@ func TestClearCRStatusFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clearCRStatusFields(tt.mg)
+			clearStatusFields(tt.mg)
 
 			if tt.mg == nil {
 				// Test passed if no panic occurred
