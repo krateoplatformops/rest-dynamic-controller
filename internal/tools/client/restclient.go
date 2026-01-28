@@ -243,13 +243,15 @@ func (u *UnstructuredClient) FindBy(ctx context.Context, cli *http.Client, path 
 		// Search for a matching item in the current page's results.
 		if matchedItem, found := u.findItemInList(itemList); found {
 			// Found a match, return it immediately.
+			// We do not continue pagination once a match is found.
 			return Response{
 				ResponseBody: matchedItem,
 				statusCode:   response.statusCode,
 			}, nil
 		}
 
-		// Ask the paginator if we should continue to the next page.
+		// At this point, no match was found in the current page.
+		// Ask the paginator if we should continue to the next page (in other words, if there is a next page).
 		bodyBytes, _ := json.Marshal(response.ResponseBody) // Marshal body for analysis by paginator
 		shouldContinue, err := paginator.ShouldContinue(httpResp, bodyBytes)
 		if err != nil {
