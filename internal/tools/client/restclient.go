@@ -167,15 +167,27 @@ func (u *UnstructuredClient) Call(ctx context.Context, cli *http.Client, path st
 	// Re-wrap body otherwise it will be closed
 	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
-	// Allow empty body only 204 No Content and 304 Not Modified responses
-	statusAllowsEmpty := resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotModified
+	// Allow empty body for success codes that may legitimately return no content, even if not common (no MUST NOT in RFCs, so we allow it):
+	// - 200 OK: Common for DELETE, PUT, PATCH operations
+	// - 201 Created: Some APIs return only Location header
+	// - 202 Accepted: Common for async/fire-and-forget operations
+	// - 203 Non-Authoritative Information: Transforming proxy responses
+	// - 204 No Content: RFC mandates no body
+	// - 205 Reset Content: RFC mandates no body
+	// - 304 Not Modified: RFC mandates no body
+	statusAllowsEmpty := resp.StatusCode == http.StatusOK ||
+		resp.StatusCode == http.StatusCreated ||
+		resp.StatusCode == http.StatusAccepted ||
+		resp.StatusCode == http.StatusNonAuthoritativeInfo ||
+		resp.StatusCode == http.StatusNoContent ||
+		resp.StatusCode == http.StatusResetContent ||
+		resp.StatusCode == http.StatusNotModified
 
-	// E.g. 200 but with no content, or 201 Created with no content (error case)
 	if len(bodyBytes) == 0 && !statusAllowsEmpty {
-		return Response{}, fmt.Errorf("response body is empty for unexpected status code %d", resp.StatusCode)
+		return Response{}, fmt.Errorf("response body is empty for a status code which requires a body: %d", resp.StatusCode)
 	}
 
-	// For status codes that allow empty bodies (e.g., 204, 304), return nil directly, without going through handleResponse
+	// For status codes that allow empty bodies, return nil directly, without going through handleResponse
 	if len(bodyBytes) == 0 && statusAllowsEmpty {
 		return Response{
 			ResponseBody: nil,
@@ -415,15 +427,27 @@ func (u *UnstructuredClient) CallForPagination(ctx context.Context, cli *http.Cl
 	// Re-wrap body otherwise it will be closed
 	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
-	// Allow empty body only 204 No Content and 304 Not Modified responses
-	statusAllowsEmpty := resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotModified
+	// Allow empty body for success codes that may legitimately return no content, even if not common (no MUST NOT in RFCs, so we allow it):
+	// - 200 OK: Common for DELETE, PUT, PATCH operations
+	// - 201 Created: Some APIs return only Location header
+	// - 202 Accepted: Common for async/fire-and-forget operations
+	// - 203 Non-Authoritative Information: Transforming proxy responses
+	// - 204 No Content: RFC mandates no body
+	// - 205 Reset Content: RFC mandates no body
+	// - 304 Not Modified: RFC mandates no body
+	statusAllowsEmpty := resp.StatusCode == http.StatusOK ||
+		resp.StatusCode == http.StatusCreated ||
+		resp.StatusCode == http.StatusAccepted ||
+		resp.StatusCode == http.StatusNonAuthoritativeInfo ||
+		resp.StatusCode == http.StatusNoContent ||
+		resp.StatusCode == http.StatusResetContent ||
+		resp.StatusCode == http.StatusNotModified
 
-	// E.g. 200 but with no content, or 201 Created with no content (error case)
 	if len(bodyBytes) == 0 && !statusAllowsEmpty {
-		return Response{}, nil, fmt.Errorf("response body is empty for unexpected status code %d", resp.StatusCode)
+		return Response{}, nil, fmt.Errorf("response body is empty for a status code which requires a body: %d", resp.StatusCode)
 	}
 
-	// For status codes that allow empty bodies (e.g., 204, 304), return nil directly, without going through handleResponse
+	// For status codes that allow empty bodies, return nil directly, without going through handleResponse
 	if len(bodyBytes) == 0 && statusAllowsEmpty {
 		return Response{
 			ResponseBody: nil,

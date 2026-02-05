@@ -199,6 +199,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Error(fmt.Errorf("error building call configuration"), "Building call configuration")
 			return controller.ExternalObservation{}, fmt.Errorf("error building call configuration")
 		}
+		log.Debug("Performing FindBy API call", "path", callInfo.Path)
 		response, err = apiCall(ctx, &http.Client{}, callInfo.Path, reqConfiguration)
 		notfound := restclient.IsNotFoundError(err)
 		if notfound && unstructuredtools.IsConditionSet(mg, customcondition.Pending()) {

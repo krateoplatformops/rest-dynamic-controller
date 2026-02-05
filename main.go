@@ -33,7 +33,7 @@ const (
 )
 
 var (
-	Build string = "unknown"
+	Build string
 )
 
 func main() {
