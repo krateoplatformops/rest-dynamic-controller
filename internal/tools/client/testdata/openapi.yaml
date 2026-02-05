@@ -29,6 +29,28 @@ paths:
                     type: string
                   name:
                     type: string
+        '206':
+          description: Partial content
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: Not found
+    delete:
+      summary: Delete test data by ID
+      operationId: deleteTestById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully deleted (empty body)
+        '204':
+          description: No content
         '404':
           description: Not found
     put:
@@ -90,6 +112,8 @@ paths:
                 properties:
                   id:
                     type: string
+        '202':
+          description: Accepted (async operation)
         '400':
           description: Bad request
 

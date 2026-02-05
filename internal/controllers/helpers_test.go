@@ -806,3 +806,92 @@ func TestPopulateStatusFields(t *testing.T) {
 		})
 	}
 }
+
+func TestClearCRStatusFields(t *testing.T) {
+	tests := []struct {
+		name     string
+		mg       *unstructured.Unstructured
+		expected map[string]interface{}
+	}{
+		{
+			name: "clear status with existing status fields",
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "v1",
+					"kind":       "Test",
+					"metadata": map[string]interface{}{
+						"name": "test-resource",
+					},
+					"spec": map[string]interface{}{
+						"field1": "value1",
+					},
+					"status": map[string]interface{}{
+						"id":    "123",
+						"state": "active",
+					},
+				},
+			},
+			expected: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Test",
+				"metadata": map[string]interface{}{
+					"name": "test-resource",
+				},
+				"spec": map[string]interface{}{
+					"field1": "value1",
+				},
+			},
+		},
+		{
+			name: "clear status when no status exists",
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "v1",
+					"kind":       "Test",
+					"spec": map[string]interface{}{
+						"field1": "value1",
+					},
+				},
+			},
+			expected: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Test",
+				"spec": map[string]interface{}{
+					"field1": "value1",
+				},
+			},
+		},
+		{
+			name: "clear status with empty status",
+			mg: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec":   map[string]interface{}{"field1": "value1"},
+					"status": map[string]interface{}{},
+				},
+			},
+			expected: map[string]interface{}{
+				"spec": map[string]interface{}{"field1": "value1"},
+			},
+		},
+		{
+			name:     "nil unstructured - should not panic",
+			mg:       nil,
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearStatusFields(tt.mg)
+
+			if tt.mg == nil {
+				// Test passed if no panic occurred
+				return
+			}
+
+			if diff := cmp.Diff(tt.expected, tt.mg.Object); diff != "" {
+				t.Errorf("clearCRStatusFields() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

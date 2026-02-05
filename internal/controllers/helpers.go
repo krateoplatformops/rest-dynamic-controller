@@ -49,6 +49,7 @@ func isCRUpdated(mg *unstructured.Unstructured, rm map[string]interface{}) (comp
 	//	log.Printf("rm field: %s = %v", k, v)
 	//}
 
+	//log.Print("isCRUpdated - performing comparison")
 	return comparison.CompareExisting(m, rm)
 }
 
@@ -99,4 +100,14 @@ func populateStatusFields(clientInfo *getter.Info, mg *unstructured.Unstructured
 		}
 	}
 	return nil
+}
+
+// clearStatusFields removes the status field from the Custom Resource.
+// This is used during Create and Update operations to ensure no stale fields remain.
+func clearStatusFields(mg *unstructured.Unstructured) {
+	if mg == nil {
+		return
+	}
+
+	unstructured.RemoveNestedField(mg.Object, "status")
 }

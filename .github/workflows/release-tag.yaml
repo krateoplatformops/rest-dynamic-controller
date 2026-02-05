@@ -27,6 +27,12 @@ jobs:
       pull-requests: write
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Echo Build Version
+        run: echo "BUILD_VERSION=${{ github.sha }}"
+
       - name: Prepare
         run: |
           platform=${{ matrix.platform }}
@@ -56,6 +62,8 @@ jobs:
           push: true
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,"name=${{ env.GHCR_REPO }}",push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            BUILD_VERSION=${{ github.sha }}
 
       - name: Export digest
         run: |
@@ -124,7 +132,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: 'stable'
+          go-version: '1.25.3' # same as go.mod
       - name: Gather dependencies
         run: go mod download
       - name: Run coverage

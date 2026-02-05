@@ -24,7 +24,8 @@ COPY internal/ internal/
 COPY main.go main.go
 
 # Build
-RUN CGO_ENABLED=0 GO111MODULE=on go build -a -o /bin/controller ./main.go && \
+ARG BUILD_VERSION
+RUN CGO_ENABLED=0 GO111MODULE=on go build -a -ldflags="-X 'main.Build=${BUILD_VERSION}'" -o /bin/controller ./main.go && \
     strip /bin/controller
 
 # Deployment environment
