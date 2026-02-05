@@ -744,7 +744,7 @@ func (d *debuggingRoundTripper) dumpResponseWithPrettyJSON(resp *http.Response, 
 	return nil
 }
 
-// tryPrettyPrintJSON attempts to pretty-print JSON with colors. Returns the formatted bytes and true if successful.
+// tryPrettyPrintJSON attempts to pretty-print JSON. Returns the formatted bytes and true if successful.
 func tryPrettyPrintJSON(data []byte) ([]byte, bool) {
 	// Quick check: if empty or doesn't start with { or [, it's not JSON
 	trimmed := bytes.TrimSpace(data)
